@@ -29,15 +29,41 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
-
-    testImplementation("org.springframework.boot:spring-boot-starter-test")
-    testImplementation("org.springframework.boot:spring-boot-testcontainers")
-    testImplementation("org.testcontainers:testcontainers-postgresql")
-    testImplementation(libs.spock.core)
-    testImplementation(libs.spock.spring)
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
-tasks.withType<Test>().configureEach {
-    useJUnitPlatform()
+testing {
+    suites {
+        named<JvmTestSuite>("test") {
+            useSpock(libs.versions.spock)
+        }
+
+        register<JvmTestSuite>("integrationTest") {
+            useSpock(libs.versions.spock)
+            dependencies {
+                implementation(project())
+                implementation("org.springframework.boot:spring-boot-starter-test")
+                implementation("org.springframework.boot:spring-boot-testcontainers")
+                implementation("org.testcontainers:testcontainers-postgresql")
+                implementation(libs.spock.spring)
+                implementation("org.apache.groovy:groovy-json")
+            }
+            targets.all {
+                testTask.configure {
+                    shouldRunAfter(tasks.test)
+                }
+            }
+        }
+    }
+}
+
+configurations.named("integrationTestImplementation") {
+    extendsFrom(configurations.implementation.get())
+}
+
+configurations.named("integrationTestRuntimeOnly") {
+    extendsFrom(configurations.runtimeOnly.get())
+}
+
+tasks.named("check") {
+    dependsOn(testing.suites.named("integrationTest"))
 }

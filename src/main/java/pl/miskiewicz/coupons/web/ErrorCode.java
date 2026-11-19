@@ -1,0 +1,11 @@
+package pl.miskiewicz.coupons.web;
+
+public enum ErrorCode {
+    VALIDATION_FAILED,
+    MALFORMED_REQUEST,
+    INVALID_COUPON_CODE,
+    INVALID_COUNTRY_CODE,
+    COUPON_CODE_ALREADY_EXISTS,
+    COUPON_NOT_FOUND,
+    REQUEST_REJECTED
+}
