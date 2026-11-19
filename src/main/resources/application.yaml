@@ -11,3 +11,7 @@ spring:
 coupons:
   redemption:
     lock-timeout: 2s
+  geo:
+    provider: dbip
+    dbip:
+      database: geo/dbip-country-lite.mmdb

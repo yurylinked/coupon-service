@@ -27,6 +27,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation(libs.geoip2)
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 }
@@ -35,6 +36,9 @@ testing {
     suites {
         named<JvmTestSuite>("test") {
             useSpock(libs.versions.spock)
+            dependencies {
+                implementation("org.springframework.boot:spring-boot-starter-test")
+            }
         }
 
         register<JvmTestSuite>("integrationTest") {

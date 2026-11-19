@@ -9,12 +9,14 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
+import org.springframework.test.context.ActiveProfiles
 import org.springframework.jdbc.core.simple.JdbcClient
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import spock.lang.Specification
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import([PostgresTestcontainer, TestGeoConfiguration])
+@ActiveProfiles('test')
 abstract class IntegrationSpec extends Specification {
 
     @Value('${local.server.port}')
