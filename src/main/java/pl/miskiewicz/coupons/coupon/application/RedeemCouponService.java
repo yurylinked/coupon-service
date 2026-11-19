@@ -9,6 +9,7 @@ import pl.miskiewicz.coupons.coupon.domain.Coupon;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
@@ -53,6 +54,9 @@ public class RedeemCouponService {
         }
         if (redemptions.hasRedeemed(coupon.code(), userId)) {
             throw new CouponAlreadyUsedByUserException();
+        }
+        if (coupon.isExhausted()) {
+            throw new CouponExhaustedException();
         }
         return bulkhead.execute(coupon.code(), () -> redemptions.redeem(
                 coupon.code(), userId, requestCountry, clock.instant().truncatedTo(ChronoUnit.MICROS)));

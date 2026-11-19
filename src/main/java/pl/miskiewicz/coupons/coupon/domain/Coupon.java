@@ -17,6 +17,10 @@ public record Coupon(CouponCode code, CountryCode country, int maxUses, int curr
         }
     }
 
+    public boolean isExhausted() {
+        return currentUses >= maxUses;
+    }
+
     public static Coupon newCoupon(CouponCode code, CountryCode country, int maxUses, Instant createdAt) {
         return new Coupon(code, country, maxUses, 0, createdAt);
     }

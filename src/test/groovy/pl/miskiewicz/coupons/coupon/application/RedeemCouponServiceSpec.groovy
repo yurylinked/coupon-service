@@ -109,6 +109,33 @@ class RedeemCouponServiceSpec extends Specification {
         0 * _
     }
 
+    def "rejects an exhausted coupon without opening a redemption"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW))
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> false
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
+
+        then:
+        thrown(CouponExhaustedException)
+        0 * redemptions.redeem(*_)
+    }
+
+    def "tells a returning user that they already used an exhausted coupon"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW))
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> true
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
+
+        then:
+        thrown(CouponAlreadyUsedByUserException)
+    }
+
     def "does not open a redemption when the user already used the coupon"() {
         given:
         coupons.findByCode(_) >> Optional.of(WIOSNA)
