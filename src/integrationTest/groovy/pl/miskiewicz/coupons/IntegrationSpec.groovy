@@ -28,7 +28,7 @@ abstract class IntegrationSpec extends Specification {
     @Autowired
     TestGeoLocationResolver geo
 
-    final HttpClient http = HttpClient.newHttpClient()
+    final HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
 
     def setup() {
         jdbcClient.sql('TRUNCATE coupon_usage, coupon RESTART IDENTITY').update()

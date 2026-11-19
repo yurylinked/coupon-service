@@ -20,6 +20,7 @@ abstract class HotCouponSpec extends IntegrationSpec {
 
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()
     Connection lockHolder
+    Connection observer
 
     def setup() {
         createCoupon('HOT', 1_000)
@@ -29,6 +30,7 @@ abstract class HotCouponSpec extends IntegrationSpec {
     def cleanup() {
         lockHolder?.rollback()
         lockHolder?.close()
+        observer?.close()
         executor.close()
     }
 
@@ -36,6 +38,7 @@ abstract class HotCouponSpec extends IntegrationSpec {
         lockHolder = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
         lockHolder.autoCommit = false
         lockHolder.createStatement().execute("SELECT id FROM coupon WHERE code = 'HOT' FOR UPDATE")
+        observer = DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
     }
 
     void releaseHotCouponRow() {
@@ -52,14 +55,17 @@ abstract class HotCouponSpec extends IntegrationSpec {
 
     void awaitTransactionsWaitingOnLock(int expected) {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
-        while (transactionsWaitingOnLock() < expected) {
-            assert System.nanoTime() < deadline: "fewer than $expected transactions waiting on the hot row"
+        int observedMax = 0
+        int waiting
+        while ((waiting = transactionsWaitingOnLock()) < expected) {
+            observedMax = Math.max(observedMax, waiting)
+            assert System.nanoTime() < deadline: "expected $expected transactions waiting on the hot row, saw at most $observedMax"
             Thread.sleep(10)
         }
     }
 
     int transactionsWaitingOnLock() {
-        def result = lockHolder.createStatement().executeQuery(
+        def result = observer.createStatement().executeQuery(
                 "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
         result.next()
         result.getInt(1)
