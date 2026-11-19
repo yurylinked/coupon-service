@@ -71,3 +71,7 @@ configurations.named("integrationTestRuntimeOnly") {
 tasks.named("check") {
     dependsOn(testing.suites.named("integrationTest"))
 }
+
+tasks.bootJar {
+    archiveFileName = "app.jar"
+}
