@@ -10,10 +10,11 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
+import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import spock.lang.Specification
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Import(PostgresTestcontainer)
+@Import([PostgresTestcontainer, TestGeoConfiguration])
 abstract class IntegrationSpec extends Specification {
 
     @Value('${local.server.port}')
@@ -22,10 +23,41 @@ abstract class IntegrationSpec extends Specification {
     @Autowired
     JdbcClient jdbcClient
 
+    @Autowired
+    TestGeoLocationResolver geo
+
     final HttpClient http = HttpClient.newHttpClient()
 
     def setup() {
         jdbcClient.sql('TRUNCATE coupon_usage, coupon RESTART IDENTITY').update()
+        requestsComeFrom('PL')
+    }
+
+    void requestsComeFrom(String country) {
+        geo.country = Optional.ofNullable(country).map { new CountryCode(it) }
+    }
+
+    void createCoupon(String code, int maxUses) {
+        createCoupon(code, maxUses, 'PL')
+    }
+
+    void createCoupon(String code, int maxUses, String country) {
+        def response = postJson('/api/v1/coupons', [code: code, maxUses: maxUses, country: country])
+        assert response.status() == 201
+    }
+
+    int usageRows(String code) {
+        jdbcClient.sql('SELECT count(*) FROM coupon_usage u JOIN coupon c ON c.id = u.coupon_id WHERE c.code = :code')
+                .param('code', code)
+                .query(Integer)
+                .single()
+    }
+
+    int currentUses(String code) {
+        jdbcClient.sql('SELECT current_uses FROM coupon WHERE code = :code')
+                .param('code', code)
+                .query(Integer)
+                .single()
     }
 
     ApiResponse postJson(String path, Map body) {

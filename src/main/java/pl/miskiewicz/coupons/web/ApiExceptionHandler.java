@@ -14,9 +14,15 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyExistsException;
+import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
+import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
+import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
@@ -41,6 +47,38 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CouponNotFoundException.class)
     ProblemDetail couponNotFound(CouponNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(InvalidUserIdException.class)
+    ProblemDetail invalidUserId(InvalidUserIdException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID, ex.getMessage());
+    }
+
+    @ExceptionHandler(CountryUnresolvedException.class)
+    ProblemDetail countryUnresolved(CountryUnresolvedException ex) {
+        return problem(HttpStatus.FORBIDDEN, ErrorCode.COUNTRY_UNRESOLVED, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponCountryNotAllowedException.class)
+    ProblemDetail couponCountryNotAllowed(CouponCountryNotAllowedException ex) {
+        return problem(HttpStatus.FORBIDDEN, ErrorCode.COUPON_COUNTRY_NOT_ALLOWED, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponAlreadyUsedByUserException.class)
+    ProblemDetail couponAlreadyUsedByUser(CouponAlreadyUsedByUserException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponExhaustedException.class)
+    ProblemDetail couponExhausted(CouponExhaustedException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_EXHAUSTED, ex.getMessage());
+    }
+
+    @ExceptionHandler(RedemptionBusyException.class)
+    ResponseEntity<ProblemDetail> redemptionBusy(RedemptionBusyException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(problem(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.REDEMPTION_BUSY, ex.getMessage()));
     }
 
     @Override

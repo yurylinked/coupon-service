@@ -4,3 +4,10 @@ spring:
   threads:
     virtual:
       enabled: true
+  datasource:
+    hikari:
+      maximum-pool-size: 10
+
+coupons:
+  redemption:
+    lock-timeout: 2s
