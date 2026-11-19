@@ -24,13 +24,19 @@ public class RedeemCouponService {
     private final CouponRepository coupons;
     private final RedemptionStore redemptions;
     private final GeoLocationResolver geoLocation;
+    private final RedemptionBulkhead bulkhead;
     private final Clock clock;
 
     public RedeemCouponService(
-            CouponRepository coupons, RedemptionStore redemptions, GeoLocationResolver geoLocation, Clock clock) {
+            CouponRepository coupons,
+            RedemptionStore redemptions,
+            GeoLocationResolver geoLocation,
+            RedemptionBulkhead bulkhead,
+            Clock clock) {
         this.coupons = coupons;
         this.redemptions = redemptions;
         this.geoLocation = geoLocation;
+        this.bulkhead = bulkhead;
         this.clock = clock;
     }
 
@@ -48,8 +54,8 @@ public class RedeemCouponService {
         if (redemptions.hasRedeemed(coupon.code(), userId)) {
             throw new CouponAlreadyUsedByUserException();
         }
-        return redemptions.redeem(
-                coupon.code(), userId, requestCountry, clock.instant().truncatedTo(ChronoUnit.MICROS));
+        return bulkhead.execute(coupon.code(), () -> redemptions.redeem(
+                coupon.code(), userId, requestCountry, clock.instant().truncatedTo(ChronoUnit.MICROS)));
     }
 
     private static Optional<InetAddress> parseAddress(String clientAddress) {

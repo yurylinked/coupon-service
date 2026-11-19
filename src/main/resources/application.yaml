@@ -17,6 +17,10 @@ server:
 coupons:
   redemption:
     lock-timeout: 2s
+    bulkhead:
+      permits-per-coupon: 4
+      stripes: 64
+      max-wait: 200ms
   geo:
     provider: dbip
     dbip:

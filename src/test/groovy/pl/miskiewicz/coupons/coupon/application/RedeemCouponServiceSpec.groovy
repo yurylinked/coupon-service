@@ -1,6 +1,7 @@
 package pl.miskiewicz.coupons.coupon.application
 
 import java.time.Clock
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import pl.miskiewicz.coupons.coupon.domain.Coupon
@@ -31,7 +32,8 @@ class RedeemCouponServiceSpec extends Specification {
     CouponRepository coupons = Mock()
     RedemptionStore redemptions = Mock()
     GeoLocationResolver geo = Mock()
-    RedeemCouponService service = new RedeemCouponService(coupons, redemptions, geo, Clock.fixed(NOW, ZoneOffset.UTC))
+    RedeemCouponService service = new RedeemCouponService(
+            coupons, redemptions, geo, new RedemptionBulkhead(1, 1, Duration.ZERO), Clock.fixed(NOW, ZoneOffset.UTC))
 
     def "redeems a coupon with normalized input and a microsecond timestamp"() {
         given:
