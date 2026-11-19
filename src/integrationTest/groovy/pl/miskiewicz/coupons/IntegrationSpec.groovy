@@ -67,10 +67,19 @@ abstract class IntegrationSpec extends Specification {
     }
 
     ApiResponse postRaw(String path, String body) {
-        send(HttpRequest.newBuilder(uri(path))
+        postRaw(path, body, [:])
+    }
+
+    ApiResponse postJson(String path, Map body, Map<String, String> headers) {
+        postRaw(path, JsonOutput.toJson(body), headers)
+    }
+
+    ApiResponse postRaw(String path, String body, Map<String, String> headers) {
+        def request = HttpRequest.newBuilder(uri(path))
                 .header('Content-Type', 'application/json')
                 .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build())
+        headers.each { name, value -> request.header(name, value) }
+        send(request.build())
     }
 
     ApiResponse get(String path) {

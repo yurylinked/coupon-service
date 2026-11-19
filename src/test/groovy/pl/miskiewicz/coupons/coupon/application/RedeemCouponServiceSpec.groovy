@@ -24,7 +24,8 @@ class RedeemCouponServiceSpec extends Specification {
 
     static final Instant NOW = Instant.parse('2026-11-19T10:15:30.123456789Z')
     static final CountryCode PL = new CountryCode('PL')
-    static final InetAddress CLIENT = InetAddress.ofLiteral('203.0.113.7')
+    static final String CLIENT = '203.0.113.7'
+    static final InetAddress CLIENT_ADDRESS = InetAddress.ofLiteral(CLIENT)
     static final Coupon WIOSNA = Coupon.newCoupon(new CouponCode('WIOSNA'), PL, 10, NOW)
 
     CouponRepository coupons = Mock()
@@ -41,7 +42,7 @@ class RedeemCouponServiceSpec extends Specification {
 
         then:
         1 * coupons.findByCode(new CouponCode('WIOSNA')) >> Optional.of(WIOSNA)
-        1 * geo.resolveCountry(CLIENT) >> Optional.of(PL)
+        1 * geo.resolveCountry(CLIENT_ADDRESS) >> Optional.of(PL)
         1 * redemptions.hasRedeemed(WIOSNA.code(), new UserId('user-1')) >> false
         1 * redemptions.redeem(WIOSNA.code(), new UserId('user-1'), PL, Instant.parse('2026-11-19T10:15:30.123456Z')) >> expected
         result == expected
@@ -70,6 +71,22 @@ class RedeemCouponServiceSpec extends Specification {
         true         | 'PL'           | false      | CouponExhaustedException         || CouponExhaustedException
         true         | 'PL'           | false      | CouponAlreadyUsedByUserException || CouponAlreadyUsedByUserException
         true         | 'PL'           | false      | RedemptionBusyException          || RedemptionBusyException
+    }
+
+    def "treats an unparseable client address '#clientAddress' as an unresolved country"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(WIOSNA)
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', clientAddress))
+
+        then:
+        thrown(CountryUnresolvedException)
+        0 * geo.resolveCountry(_)
+        0 * redemptions._
+
+        where:
+        clientAddress << [null, '', 'not-an-ip', 'example.com', '203.0.113.7, 10.0.0.1']
     }
 
     def "rejects an invalid user id before touching any dependency"() {

@@ -1,7 +1,9 @@
 package pl.miskiewicz.coupons.coupon.application;
 
+import java.net.InetAddress;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
+import java.util.Optional;
 import org.springframework.stereotype.Service;
 import pl.miskiewicz.coupons.coupon.domain.Coupon;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
@@ -37,7 +39,8 @@ public class RedeemCouponService {
         Coupon coupon = CouponCode.tryParse(command.code())
                 .flatMap(coupons::findByCode)
                 .orElseThrow(CouponNotFoundException::new);
-        CountryCode requestCountry = geoLocation.resolveCountry(command.clientAddress())
+        CountryCode requestCountry = parseAddress(command.clientAddress())
+                .flatMap(geoLocation::resolveCountry)
                 .orElseThrow(CountryUnresolvedException::new);
         if (!coupon.country().equals(requestCountry)) {
             throw new CouponCountryNotAllowedException();
@@ -47,5 +50,16 @@ public class RedeemCouponService {
         }
         return redemptions.redeem(
                 coupon.code(), userId, requestCountry, clock.instant().truncatedTo(ChronoUnit.MICROS));
+    }
+
+    private static Optional<InetAddress> parseAddress(String clientAddress) {
+        if (clientAddress == null) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.of(InetAddress.ofLiteral(clientAddress));
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
+        }
     }
 }

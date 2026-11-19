@@ -2,7 +2,6 @@ package pl.miskiewicz.coupons.coupon.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
-import java.net.InetAddress;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -24,7 +23,6 @@ class RedemptionController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     RedemptionResponse redeem(@Valid @RequestBody RedeemCouponRequest request, HttpServletRequest httpRequest) {
-        InetAddress clientAddress = InetAddress.ofLiteral(httpRequest.getRemoteAddr());
-        return RedemptionResponse.from(redeemCouponService.redeem(request.toCommand(clientAddress)));
+        return RedemptionResponse.from(redeemCouponService.redeem(request.toCommand(httpRequest.getRemoteAddr())));
     }
 }

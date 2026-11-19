@@ -8,6 +8,12 @@ spring:
     hikari:
       maximum-pool-size: 10
 
+server:
+  forward-headers-strategy: native
+  tomcat:
+    remoteip:
+      internal-proxies: '${TRUSTED_PROXIES:127\.0\.0\.1|0:0:0:0:0:0:0:1|::1}'
+
 coupons:
   redemption:
     lock-timeout: 2s
