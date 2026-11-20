@@ -82,6 +82,15 @@ abstract class IntegrationSpec extends Specification {
         send(request.build())
     }
 
+    ApiResponse request(String method, String path, String body, String contentType) {
+        def builder = HttpRequest.newBuilder(uri(path))
+                .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
+        if (contentType != null) {
+            builder.header('Content-Type', contentType)
+        }
+        send(builder.build())
+    }
+
     ApiResponse get(String path) {
         send(HttpRequest.newBuilder(uri(path)).GET().build())
     }
