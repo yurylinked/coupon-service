@@ -103,10 +103,9 @@ public class RedeemCouponService {
 
     // If no rule rejects the re-read coupon, a use came back in the meantime and a retry can succeed.
     private RuntimeException whyNoUseLeft(CouponCode code) {
-        return coupons.findByCode(code)
-                .flatMap(CouponSnapshot::rejection)
-                .<RuntimeException>map(rejection -> rejection)
-                .orElseGet(RedemptionBusyException::new);
+        CouponSnapshot snapshot = coupons.findByCode(code)
+                .orElseThrow(() -> new IllegalStateException("Coupon " + code.value() + " disappeared"));
+        return snapshot.rejection().<RuntimeException>map(rejection -> rejection).orElseGet(RedemptionBusyException::new);
     }
 
     private CountryCode resolveCountry(String clientAddress) {

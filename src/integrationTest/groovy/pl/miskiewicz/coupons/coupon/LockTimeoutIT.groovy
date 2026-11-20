@@ -3,13 +3,15 @@ package pl.miskiewicz.coupons.coupon
 import javax.sql.DataSource
 import org.springframework.beans.factory.annotation.Autowired
 import pl.miskiewicz.coupons.IntegrationSpec
+import spock.lang.Timeout
 
+@Timeout(30)
 class LockTimeoutIT extends IntegrationSpec {
 
     @Autowired
     DataSource dataSource
 
-    def "answers 503 with Retry-After while the coupon row is locked and succeeds once it is released"() {
+    def "answers 429 with Retry-After while the coupon row is locked and succeeds once it is released"() {
         given:
         createCoupon('LOCKED', 5)
         def lockHolder = dataSource.connection
@@ -24,7 +26,7 @@ class LockTimeoutIT extends IntegrationSpec {
         def retried = postJson('/api/v1/redemptions', [code: 'LOCKED', userId: 'user-1'])
 
         then:
-        busy.status() == 503
+        busy.status() == 429
         busy.header('Retry-After') in ['1', '2', '3']
         busy.body().errorCode == 'REDEMPTION_BUSY'
         waitedMillis >= 1_900 && waitedMillis < 10_000

@@ -33,5 +33,18 @@ class CountryCodeSpec extends Specification {
         'digits'                  | '12'
         'Turkish dotted I'        | 'İT'
         'Cyrillic look-alike'     | 'РL'
+        'long s that uppercases'  | 'ſe'
+        'dotless i that uppercases' | 'ıt'
+    }
+
+    def "the constructor accepts only a canonical code: '#raw'"() {
+        when:
+        new CountryCode(raw)
+
+        then:
+        thrown(InvalidCountryCodeException)
+
+        where:
+        raw << ['pl', ' PL', 'XX', 'POL']
     }
 }

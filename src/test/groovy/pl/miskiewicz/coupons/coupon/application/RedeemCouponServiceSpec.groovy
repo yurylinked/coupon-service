@@ -45,8 +45,9 @@ class RedeemCouponServiceSpec extends Specification {
     RedemptionStore redemptions = Mock()
     GeoLocationResolver geo = Mock()
     SimpleMeterRegistry meters = new SimpleMeterRegistry()
+    RedemptionBulkhead bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
     RedeemCouponService service = new RedeemCouponService(
-            coupons, redemptions, geo, new RedemptionBulkhead(1, 1, Duration.ZERO), new RedemptionOutcomes(meters))
+            coupons, redemptions, geo, bulkhead, new RedemptionOutcomes(meters))
 
     def "redeems a coupon from normalized input"() {
         when:
@@ -141,6 +142,7 @@ class RedeemCouponServiceSpec extends Specification {
         'taken by others meanwhile'        | snapshot(coupon(currentUses: 10))  || CouponExhaustedException | 'exhausted'
         'expired meanwhile'                | snapshot(coupon(expiresAt: NOW))   || CouponExpiredException   | 'expired'
         'a use came back meanwhile, retry' | snapshot(coupon())                 || RedemptionBusyException  | 'busy'
+        'the coupon vanished, a bug'       | Optional.empty()                   || IllegalStateException    | 'error'
     }
 
     def "a user who won a race against themselves is told they already used the coupon"() {
@@ -155,6 +157,25 @@ class RedeemCouponServiceSpec extends Specification {
 
         then:
         thrown(CouponAlreadyUsedByUserException)
+    }
+
+    def "asks the client to retry without touching the database row when the coupon is saturated"() {
+        given:
+        coupons.findByCode(_) >> snapshot(coupon())
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> false
+        def held = new HeldPermit(bulkhead, CODE)
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT, null))
+
+        then:
+        thrown(RedemptionBusyException)
+        0 * redemptions.redeem(*_)
+        redemptionCount('busy') == 1
+
+        cleanup:
+        held.close()
     }
 
     def "asks the client to retry when the coupon row stays locked"() {

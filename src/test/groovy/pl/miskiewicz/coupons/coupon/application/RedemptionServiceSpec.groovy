@@ -12,6 +12,7 @@ import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException
 import pl.miskiewicz.coupons.coupon.domain.LockNotAcquiredException
 import pl.miskiewicz.coupons.coupon.domain.Redemption
+import pl.miskiewicz.coupons.coupon.domain.RedemptionId
 import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException
 import pl.miskiewicz.coupons.coupon.domain.RedemptionRecord
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore
@@ -22,6 +23,7 @@ class RedemptionServiceSpec extends Specification {
 
     static final Instant NOW = Instant.parse('2026-11-23T09:15:30.123456Z')
     static final UUID ID = UUID.fromString('019a9f3e-7c2b-7d41-9a3e-5b6c7d8e9f01')
+    static final RedemptionId RID = new RedemptionId(ID)
     static final CouponCode BOOK = new CouponCode('BOOK')
     static final Redemption REDEMPTION = new Redemption(ID, BOOK, new UserId('user-1'), new CountryCode('PL'), NOW.minusSeconds(60))
     static final RedemptionRecord ACTIVE = new RedemptionRecord(REDEMPTION, null)
@@ -30,12 +32,13 @@ class RedemptionServiceSpec extends Specification {
     RedemptionStore redemptions = Mock()
     CouponRepository coupons = Mock()
     SimpleMeterRegistry meters = new SimpleMeterRegistry()
+    RedemptionBulkhead bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
     RedemptionService service = new RedemptionService(
-            redemptions, coupons, new RedemptionBulkhead(1, 1, Duration.ZERO), new RedemptionOutcomes(meters))
+            redemptions, coupons, bulkhead, new RedemptionOutcomes(meters))
 
     def "finds a redemption by its id in any letter case"() {
         given:
-        redemptions.findById(ID) >> Optional.of(ACTIVE)
+        redemptions.findById(RID) >> Optional.of(ACTIVE)
 
         expect:
         service.get(ID.toString().toUpperCase()) == ACTIVE
@@ -70,8 +73,8 @@ class RedemptionServiceSpec extends Specification {
         service.cancel(ID.toString())
 
         then:
-        1 * redemptions.findById(ID) >> Optional.of(ACTIVE)
-        1 * redemptions.cancel(ID) >> true
+        1 * redemptions.findById(RID) >> Optional.of(ACTIVE)
+        1 * redemptions.cancel(RID) >> true
         cancellations('success') == 1
     }
 
@@ -80,15 +83,15 @@ class RedemptionServiceSpec extends Specification {
         service.cancel(ID.toString())
 
         then:
-        1 * redemptions.findById(ID) >> Optional.of(CANCELLED)
+        1 * redemptions.findById(RID) >> Optional.of(CANCELLED)
         0 * redemptions.cancel(_)
         cancellations('already_cancelled') == 1
     }
 
     def "when the atomic cancel changes nothing, decides why: #reason"() {
         given:
-        redemptions.findById(ID) >>> [Optional.of(ACTIVE), Optional.of(current)]
-        redemptions.cancel(ID) >> false
+        redemptions.findById(RID) >>> [Optional.of(ACTIVE), Optional.of(current)]
+        redemptions.cancel(RID) >> false
         coupons.findByCode(BOOK) >> Optional.of(new CouponSnapshot(coupon, NOW))
 
         when:
@@ -107,13 +110,30 @@ class RedemptionServiceSpec extends Specification {
         reason                                  | current   | coupon                       || expected                | outcome
         'another cancel committed meanwhile'    | CANCELLED | coupon(null)                 || null                    | 'already_cancelled'
         'the coupon has expired'                | ACTIVE    | coupon(NOW)                  || CouponExpiredException  | 'expired'
-        'nothing explains it, so retry'         | ACTIVE    | coupon(null)                 || RedemptionBusyException | 'busy'
+        'nothing explains it, so it is a bug'   | ACTIVE    | coupon(null)                 || IllegalStateException   | 'error'
+    }
+
+    def "a cancel waits its turn in the same bulkhead as redemptions of the coupon"() {
+        given:
+        redemptions.findById(RID) >> Optional.of(ACTIVE)
+        def held = new HeldPermit(bulkhead, BOOK)
+
+        when:
+        service.cancel(ID.toString())
+
+        then:
+        thrown(RedemptionBusyException)
+        0 * redemptions.cancel(_)
+        cancellations('busy') == 1
+
+        cleanup:
+        held.close()
     }
 
     def "asks the caller to retry when the coupon row stays locked"() {
         given:
-        redemptions.findById(ID) >> Optional.of(ACTIVE)
-        redemptions.cancel(ID) >> { throw new LockNotAcquiredException(new RuntimeException('55P03')) }
+        redemptions.findById(RID) >> Optional.of(ACTIVE)
+        redemptions.cancel(RID) >> { throw new LockNotAcquiredException(new RuntimeException('55P03')) }
 
         when:
         service.cancel(ID.toString())

@@ -27,7 +27,7 @@ public class RedemptionService {
     }
 
     public RedemptionRecord get(String rawRedemptionId) {
-        return redemptions.findById(RedemptionId.parse(rawRedemptionId).value())
+        return redemptions.findById(RedemptionId.parse(rawRedemptionId))
                 .orElseThrow(RedemptionNotFoundException::new);
     }
 
@@ -53,22 +53,26 @@ public class RedemptionService {
 
     private boolean cancelAtomically(RedemptionRecord record) {
         try {
-            return redemptions.cancel(record.redemption().id());
+            return redemptions.cancel(new RedemptionId(record.redemption().id()));
         } catch (LockNotAcquiredException ex) {
             throw new RedemptionBusyException();
         }
     }
 
-    // The atomic cancel changed nothing; work out why from the current state.
+    // The atomic cancel changed nothing: either another cancel won or the coupon has expired. Anything else is a bug,
+    // reported as one instead of as a retry the order system would repeat forever.
     private CancellationResult whyNotCancelled(RedemptionRecord record) {
-        RedemptionRecord current = redemptions.findById(record.redemption().id()).orElseThrow(RedemptionNotFoundException::new);
+        RedemptionId id = new RedemptionId(record.redemption().id());
+        RedemptionRecord current = redemptions.findById(id)
+                .orElseThrow(() -> new IllegalStateException("Redemption " + id.value() + " disappeared"));
         if (current.cancelled()) {
             return CancellationResult.ALREADY_CANCELLED;
         }
-        CouponSnapshot coupon = coupons.findByCode(record.redemption().code()).orElseThrow(RedemptionNotFoundException::new);
+        CouponSnapshot coupon = coupons.findByCode(record.redemption().code())
+                .orElseThrow(() -> new IllegalStateException("Coupon of redemption " + id.value() + " disappeared"));
         if (coupon.isExpired()) {
             throw new CouponExpiredException();
         }
-        throw new RedemptionBusyException();
+        throw new IllegalStateException("Cancel of redemption " + id.value() + " changed nothing without a reason");
     }
 }

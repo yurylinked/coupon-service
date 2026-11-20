@@ -11,7 +11,7 @@ CREATE TABLE coupon (
     CONSTRAINT uq_coupon_code UNIQUE (code),
     CONSTRAINT ck_coupon_code_format CHECK (code ~ '^[A-Z0-9_-]{3,32}$'),
     CONSTRAINT ck_coupon_country_format CHECK (country_code ~ '^[A-Z]{2}$'),
-    CONSTRAINT ck_coupon_max_uses CHECK (max_uses >= 1),
+    CONSTRAINT ck_coupon_max_uses CHECK (max_uses BETWEEN 1 AND 1000000),
     CONSTRAINT ck_coupon_current_uses CHECK (current_uses >= 0 AND current_uses <= max_uses),
     CONSTRAINT ck_coupon_expires_after_creation CHECK (expires_at IS NULL OR expires_at > created_at),
     CONSTRAINT ck_coupon_valid_from_before_expiry CHECK (valid_from IS NULL OR expires_at IS NULL OR valid_from < expires_at)

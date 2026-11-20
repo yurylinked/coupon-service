@@ -14,6 +14,8 @@ public record Coupon(
         Instant expiresAt,
         boolean active) {
 
+    public static final int MAX_USES_LIMIT = 1_000_000;
+    // RFC 3339 has four-digit years only; Jackson would print year 10000 as "+10000-…", which clients cannot parse.
     private static final Instant EARLIEST = Instant.parse("0001-01-01T00:00:00Z");
     private static final Instant LATEST = Instant.parse("9999-12-31T23:59:59.999999Z");
 
@@ -21,8 +23,8 @@ public record Coupon(
         Objects.requireNonNull(code, "code");
         Objects.requireNonNull(country, "country");
         Objects.requireNonNull(createdAt, "createdAt");
-        if (maxUses < 1) {
-            throw new IllegalArgumentException("maxUses must be at least 1");
+        if (maxUses < 1 || maxUses > MAX_USES_LIMIT) {
+            throw new InvalidMaxUsesException();
         }
         if (currentUses < 0 || currentUses > maxUses) {
             throw new IllegalArgumentException("currentUses must be between 0 and maxUses");
@@ -37,7 +39,10 @@ public record Coupon(
     }
 
     public static Coupon newCoupon(
-            CouponCode code, CountryCode country, int maxUses, Instant createdAt, Instant validFrom, Instant expiresAt) {
+            CouponCode code, CountryCode country, Integer maxUses, Instant createdAt, Instant validFrom, Instant expiresAt) {
+        if (maxUses == null) {
+            throw new InvalidMaxUsesException();
+        }
         return new Coupon(code, country, maxUses, 0, createdAt, validFrom, expiresAt, true);
     }
 

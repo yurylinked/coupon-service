@@ -94,6 +94,7 @@ class CouponLifecycleIT extends IntegrationSpec {
     def "the database refuses #description"() {
         given:
         postJson('/api/v1/coupons', [code: 'ZIMA', maxUses: 5, country: 'PL', expiresAt: '2031-01-01T00:00:00Z'])
+        redeem('ZIMA', 'user-1')
 
         when:
         jdbcClient.sql(sql).param('code', 'ZIMA').update()
@@ -106,6 +107,15 @@ class CouponLifecycleIT extends IntegrationSpec {
         'a validity window that does not start earlier' | 'UPDATE coupon SET valid_from = expires_at WHERE code = :code'
         'more uses than the limit'                      | 'UPDATE coupon SET current_uses = max_uses + 1 WHERE code = :code'
         'a negative use count'                          | 'UPDATE coupon SET current_uses = -1 WHERE code = :code'
+        'a use limit of zero'                           | 'UPDATE coupon SET max_uses = 0, current_uses = 0 WHERE code = :code'
+        'a use limit above the cap'                     | 'UPDATE coupon SET max_uses = 1000001 WHERE code = :code'
+        'a lowercase code'                              | "UPDATE coupon SET code = 'zima' WHERE code = :code"
+        'a lowercase coupon country'                    | "UPDATE coupon SET country_code = 'pl' WHERE code = :code"
+        'an expiry before creation'                     | "UPDATE coupon SET expires_at = created_at - interval '1 second' WHERE code = :code"
+        'a cancellation before the use'                 | "UPDATE coupon_usage SET cancelled_at = used_at - interval '1 microsecond' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'a lowercase redemption country'                | "UPDATE coupon_usage SET country_code = 'pl' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'an idempotency key with a space'               | "UPDATE coupon_usage SET idempotency_key = 'a b' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'an empty user id'                              | "UPDATE coupon_usage SET user_id = '' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
     }
 
     private patchStatus(String code, boolean active) {

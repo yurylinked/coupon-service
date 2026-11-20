@@ -1,11 +1,15 @@
 package pl.miskiewicz.coupons.coupon
 
 import java.time.Instant
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import javax.sql.DataSource
 import org.springframework.beans.factory.annotation.Autowired
 import pl.miskiewicz.coupons.IntegrationSpec
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import pl.miskiewicz.coupons.coupon.domain.RedeemAttempt
+import pl.miskiewicz.coupons.coupon.domain.RedemptionId
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore
 import pl.miskiewicz.coupons.coupon.domain.UserId
 
@@ -15,6 +19,9 @@ class RedemptionCancellationIT extends IntegrationSpec {
 
     @Autowired
     RedemptionStore redemptionStore
+
+    @Autowired
+    DataSource dataSource
 
     def "a redemption can be read back, cancelled, and the user can then redeem again"() {
         given:
@@ -70,8 +77,27 @@ class RedemptionCancellationIT extends IntegrationSpec {
         'something not an id' | 'not-a-uuid'                 || 400    | 'INVALID_REDEMPTION_ID'
     }
 
+    def "reads and cancels only the redemption the id names"() {
+        given:
+        createCoupon('BOOK', 5)
+        String mine = redeem('BOOK', 'user-1').body().redemptionId
+        String theirs = redeem('BOOK', 'user-2').body().redemptionId
+
+        when:
+        def read = get("/api/v1/redemptions/${theirs}")
+        cancel(mine)
+
+        then:
+        read.body().redemptionId == theirs
+        read.body().userId == 'user-2'
+        get("/api/v1/redemptions/${theirs}").body().cancelledAt == null
+        get("/api/v1/redemptions/${mine}").body().cancelledAt != null
+        currentUses('BOOK') == 1
+    }
+
     def "does not give back a use of an expired coupon"() {
         given:
+        createCoupon('OTHER', 5)
         postJson('/api/v1/coupons', [code: 'BOOK', maxUses: 5, country: 'PL', expiresAt: '2030-07-01T00:00:00Z'])
         String id = redeem('BOOK', 'user-1').body().redemptionId
         expireNow('BOOK')
@@ -125,7 +151,7 @@ class RedemptionCancellationIT extends IntegrationSpec {
         def redeemed = redemptionStore.redeem(new CouponCode('BOOK'), new UserId('user-1'), PL, null) as RedeemAttempt.Redeemed
 
         when:
-        def outcomes = race(20) { i -> redemptionStore.cancel(redeemed.redemption().id()) ? 'cancelled' : 'unchanged' }
+        def outcomes = race(20) { i -> redemptionStore.cancel(new RedemptionId(redeemed.redemption().id())) ? 'cancelled' : 'unchanged' }
 
         then:
         outcomes.countBy { it } == [cancelled: 1, unchanged: 19]
@@ -133,11 +159,13 @@ class RedemptionCancellationIT extends IntegrationSpec {
         activeUsageRows('BOOK') == 0
     }
 
-    def "cancelling the last use while another customer redeems it never deadlocks and keeps the counter exact"() {
+    // The same user is the dangerous case: its redeem inserts against the very usage row the cancel updates,
+    // so a cancel locking that row before the coupon would deadlock with it.
+    def "cancelling a use while #description redeems the coupon never deadlocks and keeps the counter exact"() {
         given:
-        def codes = (1..20).collect { "LAST-$it" as String }
+        def codes = (1..20).collect { "RACE-$it" as String }
         def redemptionIds = codes.collect { code ->
-            createCoupon(code, 1)
+            createCoupon(code, maxUses)
             (redemptionStore.redeem(new CouponCode(code), new UserId('user-1'), PL, null) as RedeemAttempt.Redeemed).redemption().id()
         }
 
@@ -145,15 +173,60 @@ class RedemptionCancellationIT extends IntegrationSpec {
         def outcomes = codes.indices.collectMany { int index ->
             race(2) { i ->
                 if (i == 1) {
-                    return redemptionStore.cancel(redemptionIds[index]) ? 'cancelled' : 'unchanged'
+                    return redemptionStore.cancel(new RedemptionId(redemptionIds[index])) ? 'cancelled' : 'unchanged'
                 }
-                redemptionStore.redeem(new CouponCode(codes[index]), new UserId('user-2'), PL, null)
+                redemptionStore.redeem(new CouponCode(codes[index]), new UserId(rival), PL, null)
             }
         }
 
         then:
-        outcomes.every { it in ['cancelled', 'Redeemed', 'NoUseLeft'] }
+        outcomes.every { it in ['cancelled', 'Redeemed', 'NoUseLeft', 'AlreadyRedeemed'] }
         outcomes.count { it == 'cancelled' } == codes.size()
         codes.every { currentUses(it) == activeUsageRows(it) }
+
+        where:
+        description     | rival    | maxUses
+        'another user'  | 'user-2' | 1
+        'the same user' | 'user-1' | 2
+    }
+
+    def "a cancel takes the coupon lock before it touches the redemption row"() {
+        given:
+        createCoupon('BOOK', 5)
+        def redeemed = redemptionStore.redeem(new CouponCode('BOOK'), new UserId('user-1'), PL, null) as RedeemAttempt.Redeemed
+        def holder = dataSource.connection
+        holder.autoCommit = false
+        holder.createStatement().execute("SELECT id FROM coupon WHERE code = 'BOOK' FOR UPDATE")
+
+        when:
+        def cancelling = CompletableFuture.supplyAsync { redemptionStore.cancel(new RedemptionId(redeemed.redemption().id())) }
+        Thread.sleep(300)
+        def redemptionRowFree = redemptionRowLockable(redeemed.redemption().id())
+        holder.rollback()
+        holder.close()
+
+        then:
+        redemptionRowFree
+        cancelling.get(10, TimeUnit.SECONDS)
+        currentUses('BOOK') == 0
+    }
+
+    private boolean redemptionRowLockable(UUID redemptionId) {
+        def probe = dataSource.connection
+        try {
+            probe.autoCommit = false
+            def statement = probe.prepareStatement('SELECT id FROM coupon_usage WHERE public_id = ? FOR UPDATE NOWAIT')
+            statement.setObject(1, redemptionId)
+            statement.executeQuery()
+            true
+        } catch (java.sql.SQLException ex) {
+            if (ex.SQLState != '55P03') {
+                throw ex
+            }
+            false
+        } finally {
+            probe.rollback()
+            probe.close()
+        }
     }
 }

@@ -60,4 +60,23 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         where:
         maxUses << [100, 1]
     }
+
+    def "over HTTP, 50 customers racing for 10 uses get exactly 10 grants, shed requests included after their retry"() {
+        given:
+        createCoupon('HOT', 10)
+
+        when:
+        def first = race(50) { i -> "${i}:${redeem('HOT', "user-$i").status()}".toString() }
+        def shed = first.findAll { it.endsWith(':429') }.collect { it.tokenize(':')[0] }
+        def retried = shed.collect { i -> redeem('HOT', "user-$i").status() as String }
+        def statuses = first.collect { it.tokenize(':')[1] }.findAll { it != '429' } + retried
+
+        then:
+        first.every { it.tokenize(':')[1] in ['201', '409', '429'] }
+        statuses.size() == 50
+        statuses.count { it == '201' } == 10
+        statuses.count { it == '409' } == 40
+        currentUses('HOT') == 10
+        usageRows('HOT') == 10
+    }
 }

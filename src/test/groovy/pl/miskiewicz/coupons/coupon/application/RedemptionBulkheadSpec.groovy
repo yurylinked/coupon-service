@@ -66,6 +66,57 @@ class RedemptionBulkheadSpec extends Specification {
         bulkhead.execute(HOT) { 'next' } == 'next'
     }
 
+    def "a refused call gives back no permit it never held"() {
+        given:
+        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
+        def release = holdPermit(bulkhead, HOT)
+
+        when:
+        def outcomes = (1..2).collect {
+            try {
+                bulkhead.execute(HOT) { 'granted' }
+            } catch (RedemptionBusyException ignored) {
+                'refused'
+            }
+        }
+
+        then:
+        outcomes == ['refused', 'refused']
+
+        cleanup:
+        release.countDown()
+    }
+
+    def "waits for a permit freed within the wait limit instead of refusing at once"() {
+        given:
+        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ofSeconds(5))
+        def release = holdPermit(bulkhead, HOT)
+        executor.submit({
+            Thread.sleep(100)
+            release.countDown()
+        } as Runnable)
+
+        expect:
+        bulkhead.execute(HOT) { 'after the wait' } == 'after the wait'
+    }
+
+    def "an interrupted caller is refused and keeps its interrupt flag"() {
+        given:
+        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ofSeconds(5))
+        def release = holdPermit(bulkhead, HOT)
+        Thread.currentThread().interrupt()
+
+        when:
+        bulkhead.execute(HOT) { 'never' }
+
+        then:
+        thrown(RedemptionBusyException)
+        Thread.interrupted()
+
+        cleanup:
+        release.countDown()
+    }
+
     def "rejects invalid configuration: permits=#permits, stripes=#stripes, wait=#wait"() {
         when:
         new RedemptionBulkhead(permits, stripes, wait)

@@ -10,6 +10,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.IdempotencyKey;
 import pl.miskiewicz.coupons.coupon.domain.RedeemAttempt;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionId;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionRecord;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore;
 import pl.miskiewicz.coupons.coupon.domain.UserId;
@@ -64,7 +65,7 @@ public class NaiveRedemptionStore implements RedemptionStore {
     }
 
     @Override
-    public Optional<RedemptionRecord> findById(UUID redemptionId) {
+    public Optional<RedemptionRecord> findById(RedemptionId redemptionId) {
         throw new UnsupportedOperationException();
     }
 
@@ -74,7 +75,7 @@ public class NaiveRedemptionStore implements RedemptionStore {
     }
 
     @Override
-    public boolean cancel(UUID redemptionId) {
+    public boolean cancel(RedemptionId redemptionId) {
         throw new UnsupportedOperationException();
     }
 

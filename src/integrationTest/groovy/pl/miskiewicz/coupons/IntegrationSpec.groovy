@@ -42,6 +42,7 @@ abstract class IntegrationSpec extends Specification {
         jdbcClient.sql('TRUNCATE coupon_usage, coupon RESTART IDENTITY').update()
         requestsComeFrom('PL')
         geo.pause = null
+        geo.lastLookup = null
     }
 
     void requestsComeFrom(String country) {

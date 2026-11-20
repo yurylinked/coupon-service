@@ -28,6 +28,7 @@ import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException
+import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException
@@ -57,6 +58,8 @@ class ApiExceptionHandlerSpec extends Specification {
         'pool-exhausted'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
         'no-transaction'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
         'connection-lost'  || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'connect-refused'  || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'no-sql-state'     || 500    | 'INTERNAL_ERROR'      | null
         'constraint'       || 500    | 'INTERNAL_ERROR'      | null
         'bug'              || 500    | 'INTERNAL_ERROR'      | null
     }
@@ -71,6 +74,7 @@ class ApiExceptionHandlerSpec extends Specification {
         new InvalidCountryCodeException()        || 400    | 'INVALID_COUNTRY_CODE'
         new InvalidUserIdException()             || 400    | 'INVALID_USER_ID'
         new InvalidIdempotencyKeyException()     || 400    | 'INVALID_IDEMPOTENCY_KEY'
+        new InvalidMaxUsesException()            || 400    | 'INVALID_MAX_USES'
         new InvalidRedemptionIdException()       || 400    | 'INVALID_REDEMPTION_ID'
         new InvalidExpiryException()             || 400    | 'INVALID_EXPIRY'
         new InvalidValidityPeriodException()     || 400    | 'INVALID_VALIDITY_PERIOD'
@@ -100,7 +104,7 @@ class ApiExceptionHandlerSpec extends Specification {
         where:
         failure     || status | errorCode                     | retryAfter
         'suspended' || 409    | 'COUPON_SUSPENDED'            | null
-        'busy'      || 503    | 'REDEMPTION_BUSY'             | '2'
+        'busy'      || 429    | 'REDEMPTION_BUSY'             | '2'
     }
 
     @RestController
@@ -116,6 +120,12 @@ class ApiExceptionHandlerSpec extends Specification {
             }
             if (failure == 'connection-lost') {
                 throw new DataAccessResourceFailureException('secret', new SQLException('secret connection detail', '08006'))
+            }
+            if (failure == 'connect-refused') {
+                throw new DataAccessResourceFailureException('secret', new SQLException('secret refused detail', '08001'))
+            }
+            if (failure == 'no-sql-state') {
+                throw new DataAccessResourceFailureException('secret', new SQLException('secret stateless detail'))
             }
             if (failure == 'suspended') {
                 throw new CouponSuspendedException()

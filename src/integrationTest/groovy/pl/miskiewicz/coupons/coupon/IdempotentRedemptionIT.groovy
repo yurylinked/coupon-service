@@ -81,7 +81,7 @@ class IdempotentRedemptionIT extends IntegrationSpec {
 
         then: 'a request may still be turned away by the bulkhead, but never with an error about its own redemption'
         outcomes.size() == 10
-        outcomes.every { it in ['201', '503'] }
+        outcomes.every { it in ['201', '429'] }
         responses.findAll { it.status() == 201 }*.body()*.redemptionId.unique().size() == 1
         currentUses('BOOK') == 1
         usageRows('BOOK') == 1
@@ -132,6 +132,22 @@ class IdempotentRedemptionIT extends IntegrationSpec {
         cleanup:
         stalled?.release()
         executor?.close()
+    }
+
+    def "the longest key with every allowed character is stored and replayed, so the domain and the database agree"() {
+        given:
+        createCoupon('BOOK', 5)
+        String key = ('AZaz09._:-' * 7).take(64)
+
+        when:
+        def original = redeem('BOOK', 'user-1', key)
+        def retry = redeem('BOOK', 'user-1', key)
+
+        then:
+        original.status() == 201
+        retry.status() == 201
+        retry.header('Idempotent-Replayed') == 'true'
+        retry.body().redemptionId == original.body().redemptionId
     }
 
     def "rejects a malformed key before looking at the coupon"() {

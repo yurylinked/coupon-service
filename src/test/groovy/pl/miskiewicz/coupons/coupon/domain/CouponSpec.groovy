@@ -27,9 +27,35 @@ class CouponSpec extends Specification {
 
         where:
         maxUses | currentUses
-        0       | 0
         5       | -1
         5       | 6
+    }
+
+    def "accepts a use limit of #maxUses"() {
+        expect:
+        coupon(maxUses: maxUses, currentUses: 0).maxUses() == maxUses
+
+        where:
+        maxUses << [1, Coupon.MAX_USES_LIMIT]
+    }
+
+    def "rejects a use limit of #maxUses"() {
+        when:
+        coupon(maxUses: maxUses, currentUses: 0)
+
+        then:
+        thrown(InvalidMaxUsesException)
+
+        where:
+        maxUses << [Integer.MIN_VALUE, -1, 0, Coupon.MAX_USES_LIMIT + 1, Integer.MAX_VALUE]
+    }
+
+    def "a new coupon needs a use limit"() {
+        when:
+        Coupon.newCoupon(new CouponCode('WIOSNA'), new CountryCode('PL'), null, NOW, null, null)
+
+        then:
+        thrown(InvalidMaxUsesException)
     }
 
     def "is expired=#expired at #at when it expires at #expiresAt"() {
@@ -117,7 +143,7 @@ class CouponSpec extends Specification {
         false   | true   | false        | true      || 'CouponExhaustedException'
     }
 
-    def "rejects dates outside the four-digit years the database can store: #description"() {
+    def "rejects dates outside the four-digit years RFC 3339 can write: #description"() {
         when:
         coupon(validFrom: validFrom, expiresAt: expiresAt)
 

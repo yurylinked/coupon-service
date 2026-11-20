@@ -31,7 +31,7 @@ dependencies {
     implementation("io.micrometer:micrometer-core")
     runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
-    runtimeOnly("org.postgresql:postgresql")
+    implementation("org.postgresql:postgresql")
 }
 
 testing {

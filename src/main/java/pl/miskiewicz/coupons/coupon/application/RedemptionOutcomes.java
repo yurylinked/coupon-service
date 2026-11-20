@@ -18,6 +18,7 @@ import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException;
@@ -80,6 +81,7 @@ public class RedemptionOutcomes {
         return switch (reason) {
             case InvalidUserIdException ignored -> "invalid_user";
             case InvalidIdempotencyKeyException ignored -> "invalid_idempotency_key";
+            case InvalidMaxUsesException ignored -> "invalid_max_uses";
             case InvalidCouponCodeException ignored -> "invalid_code";
             case InvalidRedemptionIdException ignored -> "invalid_redemption_id";
             case InvalidCountryCodeException ignored -> "invalid_country";

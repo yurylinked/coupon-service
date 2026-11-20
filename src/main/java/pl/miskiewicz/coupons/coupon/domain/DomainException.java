@@ -13,6 +13,7 @@ public abstract sealed class DomainException extends RuntimeException
                 InvalidCouponCodeException,
                 InvalidExpiryException,
                 InvalidIdempotencyKeyException,
+                InvalidMaxUsesException,
                 InvalidRedemptionIdException,
                 InvalidUserIdException,
                 InvalidValidityPeriodException,

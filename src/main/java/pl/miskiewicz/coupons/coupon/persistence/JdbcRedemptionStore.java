@@ -1,12 +1,15 @@
 package pl.miskiewicz.coupons.coupon.persistence;
 
 import static pl.miskiewicz.coupons.coupon.persistence.Timestamps.instant;
+import static pl.miskiewicz.coupons.coupon.persistence.Timestamps.utc;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -21,6 +24,7 @@ import pl.miskiewicz.coupons.coupon.domain.IdempotencyKey;
 import pl.miskiewicz.coupons.coupon.domain.LockNotAcquiredException;
 import pl.miskiewicz.coupons.coupon.domain.RedeemAttempt;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionId;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionRecord;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore;
 import pl.miskiewicz.coupons.coupon.domain.UserId;
@@ -31,7 +35,7 @@ import pl.miskiewicz.coupons.coupon.domain.UserId;
 class JdbcRedemptionStore implements RedemptionStore {
 
     private static final String LOCK_NOT_AVAILABLE = "55P03";
-    private static final String UNIQUE_VIOLATION = "23505";
+    private static final String IDEMPOTENCY_KEY_INDEX = "uq_coupon_usage_idempotency_key";
     private static final String REDEMPTION_COLUMNS =
             "u.public_id, c.code, u.user_id, u.country_code, u.used_at, u.cancelled_at";
 
@@ -43,6 +47,9 @@ class JdbcRedemptionStore implements RedemptionStore {
             JdbcClient jdbc,
             PlatformTransactionManager transactionManager,
             @Value("${coupons.redemption.lock-timeout:2s}") Duration lockTimeout) {
+        if (lockTimeout.toMillis() < 1) {
+            throw new IllegalArgumentException("lock-timeout must be at least 1 ms; 0 would mean waiting forever");
+        }
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
@@ -68,7 +75,8 @@ class JdbcRedemptionStore implements RedemptionStore {
     @Override
     public RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, IdempotencyKey key) {
         return inTransaction(status -> {
-            Optional<Long> couponId = jdbc.sql("""
+            // Validity is judged at the moment the statement arrived, and that same instant is recorded as used_at.
+            Optional<Grant> grant = jdbc.sql("""
                             UPDATE coupon
                             SET current_uses = current_uses + 1
                             WHERE code = :code
@@ -76,22 +84,23 @@ class JdbcRedemptionStore implements RedemptionStore {
                               AND current_uses < max_uses
                               AND (valid_from IS NULL OR valid_from <= statement_timestamp())
                               AND (expires_at IS NULL OR expires_at > statement_timestamp())
-                            RETURNING id
+                            RETURNING id, statement_timestamp() AS granted_at
                             """)
                     .param("code", code.value())
-                    .query(Long.class)
+                    .query((rs, rowNum) -> new Grant(rs.getLong("id"), instant(rs, "granted_at")))
                     .optional();
-            if (couponId.isEmpty()) {
+            if (grant.isEmpty()) {
                 return hasRedeemed(code, userId) ? new RedeemAttempt.AlreadyRedeemed() : new RedeemAttempt.NoUseLeft();
             }
             try {
                 Optional<Redemption> inserted = jdbc.sql("""
-                                INSERT INTO coupon_usage (coupon_id, user_id, country_code, idempotency_key)
-                                VALUES (:couponId, :userId, :country, :idempotencyKey)
+                                INSERT INTO coupon_usage (coupon_id, user_id, country_code, idempotency_key, used_at)
+                                VALUES (:couponId, :userId, :country, :idempotencyKey, :usedAt)
                                 ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
                                 RETURNING public_id, used_at
                                 """)
-                        .param("couponId", couponId.get())
+                        .param("couponId", grant.get().couponId())
+                        .param("usedAt", utc(grant.get().grantedAt()))
                         .param("userId", userId.value())
                         .param("country", country.value())
                         .param("idempotencyKey", key == null ? null : key.value())
@@ -104,7 +113,7 @@ class JdbcRedemptionStore implements RedemptionStore {
                 }
                 return new RedeemAttempt.Redeemed(inserted.get());
             } catch (DataAccessException ex) {
-                if (!hasSqlState(ex, UNIQUE_VIOLATION)) {
+                if (!violates(ex, IDEMPOTENCY_KEY_INDEX)) {
                     throw ex;
                 }
                 // The key was already used by this user for this coupon, in a redemption that has since been cancelled.
@@ -115,13 +124,13 @@ class JdbcRedemptionStore implements RedemptionStore {
     }
 
     @Override
-    public Optional<RedemptionRecord> findById(UUID redemptionId) {
+    public Optional<RedemptionRecord> findById(RedemptionId redemptionId) {
         return jdbc.sql("SELECT " + REDEMPTION_COLUMNS + """
                          FROM coupon_usage u
                         JOIN coupon c ON c.id = u.coupon_id
                         WHERE u.public_id = :redemptionId
                         """)
-                .param("redemptionId", redemptionId)
+                .param("redemptionId", redemptionId.value())
                 .query((rs, rowNum) -> mapRecord(rs))
                 .optional();
     }
@@ -142,7 +151,7 @@ class JdbcRedemptionStore implements RedemptionStore {
 
     // The usage row is updated only after the coupon lock is held, so a concurrent second cancel sees the first.
     @Override
-    public boolean cancel(UUID redemptionId) {
+    public boolean cancel(RedemptionId redemptionId) {
         return inTransaction(status -> {
             Optional<Long> couponId = jdbc.sql("""
                             SELECT id
@@ -150,7 +159,7 @@ class JdbcRedemptionStore implements RedemptionStore {
                             WHERE id = (SELECT coupon_id FROM coupon_usage WHERE public_id = :redemptionId)
                             FOR NO KEY UPDATE
                             """)
-                    .param("redemptionId", redemptionId)
+                    .param("redemptionId", redemptionId.value())
                     .query(Long.class)
                     .optional();
             if (couponId.isEmpty()) {
@@ -165,7 +174,7 @@ class JdbcRedemptionStore implements RedemptionStore {
                               AND c.id = u.coupon_id
                               AND (c.expires_at IS NULL OR c.expires_at > statement_timestamp())
                             """)
-                    .param("redemptionId", redemptionId)
+                    .param("redemptionId", redemptionId.value())
                     .update();
             if (cancelled == 0) {
                 return false;
@@ -196,6 +205,15 @@ class JdbcRedemptionStore implements RedemptionStore {
 
     private static boolean hasSqlState(DataAccessException ex, String sqlState) {
         return ex.getMostSpecificCause() instanceof SQLException sql && sqlState.equals(sql.getSQLState());
+    }
+
+    private static boolean violates(DataAccessException ex, String constraint) {
+        return ex.getMostSpecificCause() instanceof PSQLException psql
+                && psql.getServerErrorMessage() != null
+                && constraint.equals(psql.getServerErrorMessage().getConstraint());
+    }
+
+    private record Grant(long couponId, Instant grantedAt) {
     }
 
     private static RedemptionRecord mapRecord(ResultSet rs) throws SQLException {

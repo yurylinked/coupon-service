@@ -41,6 +41,20 @@ class RedemptionApiIT extends IntegrationSpec {
         'WIOSNA'  || 409    | 'COUPON_EXHAUSTED'
     }
 
+    def "refuses a customer from a country the coupon is not for, without using it up"() {
+        given:
+        createCoupon('BERLIN', 5, 'DE')
+
+        when:
+        def response = redeem('BERLIN', 'user-1')
+
+        then:
+        response.status() == 403
+        response.header('Content-Type') == 'application/problem+json'
+        response.body().errorCode == 'COUPON_COUNTRY_NOT_ALLOWED'
+        currentUses('BERLIN') == 0
+    }
+
     def "rejects malformed input with one error code per field: #errorCode"() {
         when:
         def response = postRaw('/api/v1/redemptions', body)

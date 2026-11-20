@@ -18,7 +18,7 @@ class HotCouponBulkheadIT extends HotCouponSpec {
 
         then:
         transactionsWaitingOnLock() == permitsPerStripe
-        hotRequests.findAll { it.done }*.get().every { it == 503 }
+        hotRequests.findAll { it.done }*.get().every { it == 429 }
 
         when:
         def cold = redeemColdCoupon()
@@ -32,7 +32,7 @@ class HotCouponBulkheadIT extends HotCouponSpec {
 
         then:
         def statuses = statusesOf(hotRequests)
-        statuses.every { it in [201, 503] }
-        statuses.count { it == 503 } >= HOT_REQUESTS - permitsPerStripe
+        statuses.every { it in [201, 429] }
+        statuses.count { it == 429 } >= HOT_REQUESTS - permitsPerStripe
     }
 }

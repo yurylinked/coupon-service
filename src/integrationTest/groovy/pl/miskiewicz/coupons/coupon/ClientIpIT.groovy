@@ -31,16 +31,14 @@ class ClientIpIT extends IntegrationSpec {
         geo.lastLookup.isLoopbackAddress()
     }
 
-    def "answers 403 instead of failing when the forwarded address is not an IP"() {
-        given:
-        requestsComeFrom(null)
-
+    def "answers 403 without a geo lookup when the forwarded address is not an IP"() {
         when:
         def response = redeemWith('not-an-ip')
 
         then:
         response.status() == 403
         response.body().errorCode == 'COUNTRY_UNRESOLVED'
+        geo.lastLookup == null
     }
 
     private redeemWith(String forwardedFor) {

@@ -24,7 +24,7 @@ class CouponController {
     }
 
     @PostMapping
-    ResponseEntity<CouponResponse> create(@Valid @RequestBody CreateCouponRequest request) {
+    ResponseEntity<CouponResponse> create(@RequestBody CreateCouponRequest request) {
         Coupon coupon = couponService.create(request.toCommand());
         return ResponseEntity
                 .created(URI.create("/api/v1/coupons/" + coupon.code().value()))

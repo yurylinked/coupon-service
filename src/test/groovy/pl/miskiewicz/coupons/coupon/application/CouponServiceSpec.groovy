@@ -11,6 +11,7 @@ import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException
+import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException
 import spock.lang.Specification
 
@@ -67,6 +68,7 @@ class CouponServiceSpec extends Specification {
         description                       | command                                                                                                       || expected
         'an invalid code'                 | new CreateCouponCommand('ab', 100, 'PL', null, null)                                                          || InvalidCouponCodeException
         'an invalid country'              | new CreateCouponCommand('WIOSNA', 100, 'XX', null, null)                                                      || InvalidCountryCodeException
+        'no use limit'                    | new CreateCouponCommand('WIOSNA', null, 'PL', null, null)                                                     || InvalidMaxUsesException
         'an expiry that is not ahead'     | new CreateCouponCommand('WIOSNA', 100, 'PL', null, NOW)                                                       || InvalidExpiryException
         'a validity that starts too late' | new CreateCouponCommand('WIOSNA', 100, 'PL', Instant.parse('2027-01-01T00:00:00Z'), Instant.parse('2027-01-01T00:00:00Z')) || InvalidValidityPeriodException
     }

@@ -39,10 +39,22 @@ class ArchitectureSpec extends Specification {
                 .check(classes)
     }
 
-    def "adapters do not depend on each other"() {
+    def "outbound adapters depend on neither the web, the application nor each other"() {
         expect:
-        noClasses().that().resideInAnyPackage('..coupon.persistence..', '..geo..')
-                .should().dependOnClassesThat().resideInAnyPackage('..coupon.web..', 'pl.miskiewicz.coupons.web..')
+        noClasses().that().resideInAPackage('..coupon.persistence..')
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        '..coupon.web..', 'pl.miskiewicz.coupons.web..', '..coupon.application..', '..geo..')
+                .check(classes)
+        noClasses().that().resideInAPackage('..geo..')
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        '..coupon.web..', 'pl.miskiewicz.coupons.web..', '..coupon.application..', '..coupon.persistence..')
+                .check(classes)
+    }
+
+    def "transactions are drawn in persistence, not declared on application services"() {
+        expect:
+        noClasses().that().resideInAPackage('..coupon.application..')
+                .should().dependOnClassesThat().resideInAPackage('org.springframework.transaction..')
                 .check(classes)
     }
 }

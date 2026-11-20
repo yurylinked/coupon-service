@@ -33,6 +33,7 @@ import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException;
@@ -58,9 +59,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(mapping.status()).body(problem(mapping.status(), mapping.errorCode(), ex.getMessage()));
     }
 
+    // Contention on one hot coupon is not an outage: 429 keeps it out of 5xx alerting, 503 stays for a lost database.
     @ExceptionHandler(RedemptionBusyException.class)
     ResponseEntity<ProblemDetail> redemptionBusy(RedemptionBusyException ex) {
-        return retryLater(problem(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.REDEMPTION_BUSY, ex.getMessage()));
+        return retryLater(HttpStatus.TOO_MANY_REQUESTS,
+                problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.REDEMPTION_BUSY, ex.getMessage()));
     }
 
     // Exhaustive over the sealed hierarchy: a new domain outcome does not compile until it has an HTTP mapping.
@@ -70,6 +73,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             case InvalidCountryCodeException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUNTRY_CODE);
             case InvalidUserIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID);
             case InvalidIdempotencyKeyException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_IDEMPOTENCY_KEY);
+            case InvalidMaxUsesException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_MAX_USES);
             case InvalidRedemptionIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REDEMPTION_ID);
             case InvalidExpiryException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY);
             case InvalidValidityPeriodException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_VALIDITY_PERIOD);
@@ -93,14 +97,14 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CannotCreateTransactionException.class)
     ResponseEntity<ProblemDetail> transactionUnavailable(CannotCreateTransactionException ex) {
         LOG.warn("Could not open a database transaction", ex);
-        return retryLater(databaseUnavailable());
+        return retryLater(HttpStatus.SERVICE_UNAVAILABLE, databaseUnavailable());
     }
 
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ProblemDetail> dataAccessFailure(DataAccessException ex) {
         if (ex instanceof CannotGetJdbcConnectionException || isConnectionFailure(ex)) {
             LOG.warn("Database connection unavailable", ex);
-            return retryLater(databaseUnavailable());
+            return retryLater(HttpStatus.SERVICE_UNAVAILABLE, databaseUnavailable());
         }
         LOG.error("Unexpected database error", ex);
         return ResponseEntity.internalServerError().body(internalError());
@@ -158,8 +162,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problemDetail.getProperties() != null && problemDetail.getProperties().containsKey(ERROR_CODE);
     }
 
-    private ResponseEntity<ProblemDetail> retryLater(ProblemDetail body) {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+    private ResponseEntity<ProblemDetail> retryLater(HttpStatus status, ProblemDetail body) {
+        return ResponseEntity.status(status)
                 .header(HttpHeaders.RETRY_AFTER, retryAfter.seconds())
                 .body(body);
     }

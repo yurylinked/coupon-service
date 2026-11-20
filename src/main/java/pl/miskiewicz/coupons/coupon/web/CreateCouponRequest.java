@@ -1,16 +1,13 @@
 package pl.miskiewicz.coupons.coupon.web;
 
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import pl.miskiewicz.coupons.coupon.application.CreateCouponCommand;
 
-// Code and country are validated by their value objects, so each field has exactly one error code.
+// Every field is validated by the domain, so each has exactly one error code.
 record CreateCouponRequest(
         String code,
-        @NotNull @Positive @Max(1_000_000) Integer maxUses,
+        Integer maxUses,
         String country,
         OffsetDateTime validFrom,
         OffsetDateTime expiresAt) {
