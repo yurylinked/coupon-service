@@ -9,6 +9,9 @@ import org.springframework.stereotype.Component;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 
+// Caps how many redemptions of one coupon may wait on its row lock, so a hot coupon cannot hold the whole pool.
+// Coupons are hashed onto a fixed array of fair semaphores: memory stays bounded, at the cost of two coupons
+// occasionally sharing a stripe (about 0.1% of pairs with 1024 stripes).
 @Component
 public class RedemptionBulkhead {
 
@@ -16,15 +19,15 @@ public class RedemptionBulkhead {
     private final long maxWaitNanos;
 
     public RedemptionBulkhead(
-            @Value("${coupons.redemption.bulkhead.permits-per-coupon:4}") int permitsPerCoupon,
-            @Value("${coupons.redemption.bulkhead.stripes:64}") int stripeCount,
+            @Value("${coupons.redemption.bulkhead.permits-per-stripe:4}") int permitsPerStripe,
+            @Value("${coupons.redemption.bulkhead.stripes:1024}") int stripeCount,
             @Value("${coupons.redemption.bulkhead.max-wait:200ms}") Duration maxWait) {
-        if (permitsPerCoupon < 1 || stripeCount < 1 || maxWait.isNegative()) {
+        if (permitsPerStripe < 1 || stripeCount < 1 || maxWait.isNegative()) {
             throw new IllegalArgumentException("Bulkhead needs at least one permit, one stripe and a non-negative wait");
         }
         this.stripes = new Semaphore[stripeCount];
         for (int i = 0; i < stripeCount; i++) {
-            stripes[i] = new Semaphore(permitsPerCoupon, true);
+            stripes[i] = new Semaphore(permitsPerStripe, true);
         }
         this.maxWaitNanos = maxWait.toNanos();
     }

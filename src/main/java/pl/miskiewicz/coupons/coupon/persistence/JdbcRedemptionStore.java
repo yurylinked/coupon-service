@@ -64,7 +64,7 @@ class JdbcRedemptionStore implements RedemptionStore {
                     .param("code", code.value())
                     .query(Long.class)
                     .optional()
-                    .orElseThrow(CouponExhaustedException::new);
+                    .orElseThrow(() -> noUseLeft(code, userId));
             UUID redemptionId = jdbc.sql("""
                             INSERT INTO coupon_usage (coupon_id, user_id, country_code, used_at)
                             VALUES (:couponId, :userId, :country, :usedAt)
@@ -85,6 +85,12 @@ class JdbcRedemptionStore implements RedemptionStore {
             }
             throw ex;
         }
+    }
+
+    // A blocked UPDATE re-checks the row after the winner commits and may find no use left. Under READ COMMITTED
+    // this next statement sees the winner's committed usage row, so the same user is told they already used it.
+    private RuntimeException noUseLeft(CouponCode code, UserId userId) {
+        return hasRedeemed(code, userId) ? new CouponAlreadyUsedByUserException() : new CouponExhaustedException();
     }
 
     private static boolean isLockTimeout(DataAccessException ex) {

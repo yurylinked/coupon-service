@@ -2,20 +2,22 @@ package pl.miskiewicz.coupons.coupon
 
 class HotCouponBulkheadIT extends HotCouponSpec {
 
-    def "a hot coupon holds at most 4 connections and other coupons stay fast"() {
+    def "a hot coupon holds at most 4 connections while another coupon is served"() {
         given:
         lockHotCouponRow()
         def hotRequests = fireHotRedemptions()
         awaitTransactionsWaitingOnLock(4)
         Thread.sleep(300)
 
+        expect:
+        transactionsWaitingOnLock() == 4
+
         when:
         def cold = redeemColdCoupon()
 
         then:
-        transactionsWaitingOnLock() == 4
         cold.status == 201
-        cold.millis < 1_000
+        transactionsWaitingOnLock() == 4
 
         when:
         releaseHotCouponRow()

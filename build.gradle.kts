@@ -54,9 +54,24 @@ testing {
             targets.all {
                 testTask.configure {
                     shouldRunAfter(tasks.test)
+                    options {
+                        (this as JUnitPlatformOptions).excludeTags("benchmark")
+                    }
                 }
             }
         }
+    }
+}
+
+val integrationTestSourceSet = sourceSets["integrationTest"]
+
+tasks.register<Test>("benchmarkTest") {
+    description = "Runs measurements of configurations we do not ship, e.g. the pool without a bulkhead."
+    group = "verification"
+    testClassesDirs = integrationTestSourceSet.output.classesDirs
+    classpath = integrationTestSourceSet.runtimeClasspath
+    useJUnitPlatform {
+        includeTags("benchmark")
     }
 }
 

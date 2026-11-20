@@ -10,6 +10,8 @@ import java.util.concurrent.TimeUnit
 import org.springframework.beans.factory.annotation.Autowired
 import org.testcontainers.postgresql.PostgreSQLContainer
 import pl.miskiewicz.coupons.IntegrationSpec
+import pl.miskiewicz.coupons.coupon.application.RedemptionBulkhead
+import pl.miskiewicz.coupons.coupon.domain.CouponCode
 
 abstract class HotCouponSpec extends IntegrationSpec {
 
@@ -18,11 +20,15 @@ abstract class HotCouponSpec extends IntegrationSpec {
     @Autowired
     PostgreSQLContainer postgres
 
+    @Autowired
+    RedemptionBulkhead bulkhead
+
     ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()
     Connection lockHolder
     Connection observer
 
     def setup() {
+        assert bulkhead.stripeIndex(new CouponCode('HOT')) != bulkhead.stripeIndex(new CouponCode('COLD'))
         createCoupon('HOT', 1_000)
         createCoupon('COLD', 1_000)
     }

@@ -24,5 +24,5 @@ USER 10001
 ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75"
 EXPOSE 8080 8081
 HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
-    CMD wget -qO- http://localhost:8081/actuator/health | grep -q '"status":"UP"' || exit 1
+    CMD wget -qO- http://localhost:8081/actuator/health/liveness | grep -q '"status":"UP"' || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]

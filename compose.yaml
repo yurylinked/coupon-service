@@ -18,11 +18,12 @@ services:
     image: coupon-service:local
     deploy:
       replicas: 2
+    stop_grace_period: 20s
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/coupons
       SPRING_DATASOURCE_USERNAME: coupons
       SPRING_DATASOURCE_PASSWORD: coupons
-      TRUSTED_PROXIES: 172\.30\.0\.10
+      TRUSTED_PROXIES: 172.30.0.10/32
       COUPONS_GEO_PROVIDER: static
       COUPONS_GEO_STATIC_COUNTRY: ${DEMO_COUNTRY:-PL}
     depends_on:

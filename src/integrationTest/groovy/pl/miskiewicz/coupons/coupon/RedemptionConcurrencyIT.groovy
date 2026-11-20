@@ -63,6 +63,19 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         currentUses('HOT') == 1
     }
 
+    def "one user double-clicking a single-use coupon is told they already used it"() {
+        given:
+        createCoupon('HOT', 1)
+
+        when:
+        def outcomes = race(50) { i -> redemptionStore.redeem(HOT, new UserId('same-user'), PL, Instant.now()) }
+
+        then:
+        outcomes.countBy { it } == [OK: 1, CouponAlreadyUsedByUserException: 49]
+        usageRows('HOT') == 1
+        currentUses('HOT') == 1
+    }
+
     private static List<String> race(int requests, Closure<?> redemption) {
         def start = new CountDownLatch(1)
         def executor = Executors.newVirtualThreadPerTaskExecutor()
