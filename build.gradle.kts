@@ -28,6 +28,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation(libs.geoip2)
+    implementation("io.micrometer:micrometer-core")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 }
@@ -38,6 +40,7 @@ testing {
             useSpock(libs.versions.spock)
             dependencies {
                 implementation("org.springframework.boot:spring-boot-starter-test")
+                implementation(libs.archunit)
             }
         }
 

@@ -28,6 +28,7 @@ public class RedeemCouponService {
     private final RedemptionStore redemptions;
     private final GeoLocationResolver geoLocation;
     private final RedemptionBulkhead bulkhead;
+    private final RedemptionOutcomes outcomes;
     private final Clock clock;
 
     public RedeemCouponService(
@@ -35,15 +36,28 @@ public class RedeemCouponService {
             RedemptionStore redemptions,
             GeoLocationResolver geoLocation,
             RedemptionBulkhead bulkhead,
+            RedemptionOutcomes outcomes,
             Clock clock) {
         this.coupons = coupons;
         this.redemptions = redemptions;
         this.geoLocation = geoLocation;
         this.bulkhead = bulkhead;
+        this.outcomes = outcomes;
         this.clock = clock;
     }
 
     public Redemption redeem(RedeemCouponCommand command) {
+        try {
+            Redemption redemption = attempt(command);
+            outcomes.succeeded(redemption);
+            return redemption;
+        } catch (RuntimeException reason) {
+            outcomes.rejected(reason);
+            throw reason;
+        }
+    }
+
+    private Redemption attempt(RedeemCouponCommand command) {
         UserId userId = UserId.parse(command.userId());
         Coupon coupon = CouponCode.tryParse(command.code())
                 .flatMap(coupons::findByCode)

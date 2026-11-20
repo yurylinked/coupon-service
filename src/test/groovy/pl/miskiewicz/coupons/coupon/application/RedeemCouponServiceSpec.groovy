@@ -1,5 +1,6 @@
 package pl.miskiewicz.coupons.coupon.application
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.time.Clock
 import java.time.Duration
 import java.time.Instant
@@ -33,8 +34,9 @@ class RedeemCouponServiceSpec extends Specification {
     CouponRepository coupons = Mock()
     RedemptionStore redemptions = Mock()
     GeoLocationResolver geo = Mock()
+    SimpleMeterRegistry meters = new SimpleMeterRegistry()
     RedeemCouponService service = new RedeemCouponService(
-            coupons, redemptions, geo, new RedemptionBulkhead(1, 1, Duration.ZERO), Clock.fixed(NOW, ZoneOffset.UTC))
+            coupons, redemptions, geo, new RedemptionBulkhead(1, 1, Duration.ZERO), new RedemptionOutcomes(meters), Clock.fixed(NOW, ZoneOffset.UTC))
 
     def "redeems a coupon with normalized input and a microsecond timestamp"() {
         given:
@@ -90,6 +92,35 @@ class RedeemCouponServiceSpec extends Specification {
 
         where:
         clientAddress << [null, '', 'not-an-ip', 'example.com', '203.0.113.7, 10.0.0.1']
+    }
+
+    def "counts each outcome once: #outcome"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(WIOSNA)
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> false
+        redemptions.redeem(*_) >> {
+            if (failure != null) {
+                throw failure
+            }
+            new Redemption(UUID.randomUUID(), WIOSNA.code(), new UserId('user-1'), PL, NOW)
+        }
+
+        when:
+        try {
+            service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
+        } catch (RuntimeException ignored) {
+        }
+
+        then:
+        meters.get('coupon.redemptions').tag('outcome', outcome).counter().count() == 1
+
+        where:
+        failure                                      || outcome
+        null                                         || 'success'
+        new CouponExhaustedException()               || 'exhausted'
+        new RedemptionBusyException()                || 'busy'
+        new IllegalStateException('database hiccup') || 'error'
     }
 
     def "rejects an invalid user id before touching any dependency"() {
@@ -149,7 +180,7 @@ class RedeemCouponServiceSpec extends Specification {
         service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
 
         then:
-        1 * redemptions.redeem(*_)
+        1 * redemptions.redeem(*_) >> new Redemption(UUID.randomUUID(), WIOSNA.code(), new UserId('user-1'), PL, NOW)
     }
 
     def "tells a returning user that they already used an expired coupon"() {
