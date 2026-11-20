@@ -72,9 +72,12 @@ class CouponCodeSpec extends Specification {
         raw << ['wiosna', 'Black_Friday-26', '  x-1  ']
     }
 
-    def "tryParse returns empty instead of throwing for '#raw'"() {
-        expect:
-        CouponCode.tryParse(raw).isEmpty()
+    def "rejects '#raw', including a missing code and a letter that only becomes ASCII when upper-cased"() {
+        when:
+        CouponCode.parse(raw)
+
+        then:
+        thrown(InvalidCouponCodeException)
 
         where:
         raw << [null, '', 'ab', 'ſale']

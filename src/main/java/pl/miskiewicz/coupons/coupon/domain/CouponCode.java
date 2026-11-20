@@ -2,7 +2,6 @@ package pl.miskiewicz.coupons.coupon.domain;
 
 import java.util.Locale;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.regex.Pattern;
 
 public record CouponCode(String value) {
@@ -18,17 +17,10 @@ public record CouponCode(String value) {
     }
 
     public static CouponCode parse(String raw) {
-        return tryParse(raw).orElseThrow(InvalidCouponCodeException::new);
-    }
-
-    public static Optional<CouponCode> tryParse(String raw) {
-        if (raw == null) {
-            return Optional.empty();
-        }
-        String stripped = raw.strip();
+        String stripped = raw == null ? "" : raw.strip();
         if (!FORMAT.matcher(stripped).matches()) {
-            return Optional.empty();
+            throw new InvalidCouponCodeException();
         }
-        return Optional.of(new CouponCode(stripped.toUpperCase(Locale.ROOT)));
+        return new CouponCode(stripped.toUpperCase(Locale.ROOT));
     }
 }

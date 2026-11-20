@@ -2,8 +2,10 @@
 spring-boot = "4.1.2"
 spock = "2.4-groovy-5.0"
 geoip2 = "5.1.0"
+archunit = "1.5.1"
 
 [libraries]
+archunit = { module = "com.tngtech.archunit:archunit", version.ref = "archunit" }
 geoip2 = { module = "com.maxmind.geoip2:geoip2", version.ref = "geoip2" }
 spock-spring = { module = "org.spockframework:spock-spring", version.ref = "spock" }
 

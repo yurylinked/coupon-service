@@ -1,30 +1,38 @@
 package pl.miskiewicz.coupons.coupon
 
+import org.springframework.beans.factory.annotation.Value
+
 class HotCouponBulkheadIT extends HotCouponSpec {
 
-    def "a hot coupon holds at most 4 connections while another coupon is served"() {
+    @Value('${coupons.redemption.bulkhead.permits-per-stripe}')
+    int permitsPerStripe
+
+    def "a hot coupon holds at most its bulkhead's connections while another coupon is served"() {
         given:
         lockHotCouponRow()
         def hotRequests = fireHotRedemptions()
-        awaitTransactionsWaitingOnLock(4)
-        Thread.sleep(300)
 
-        expect:
-        transactionsWaitingOnLock() == 4
+        when: 'the permitted requests wait on the row and every other one has been turned away'
+        awaitTransactionsWaitingOnLock(permitsPerStripe)
+        awaitCompleted(hotRequests, HOT_REQUESTS - permitsPerStripe)
+
+        then:
+        transactionsWaitingOnLock() == permitsPerStripe
+        hotRequests.findAll { it.done }*.get().every { it == 503 }
 
         when:
         def cold = redeemColdCoupon()
 
         then:
-        cold.status == 201
-        transactionsWaitingOnLock() == 4
+        cold.status() == 201
+        transactionsWaitingOnLock() == permitsPerStripe
 
         when:
         releaseHotCouponRow()
-        def hotStatuses = statusesOf(hotRequests)
 
         then:
-        hotStatuses.every { it in [201, 503] }
-        hotStatuses.count { it == 503 } > 0
+        def statuses = statusesOf(hotRequests)
+        statuses.every { it in [201, 503] }
+        statuses.count { it == 503 } >= HOT_REQUESTS - permitsPerStripe
     }
 }

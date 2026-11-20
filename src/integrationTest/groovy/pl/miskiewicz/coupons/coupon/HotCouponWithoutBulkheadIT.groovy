@@ -22,6 +22,6 @@ class HotCouponWithoutBulkheadIT extends HotCouponSpec {
 
         then:
         waitingBeforeColdRequest > 4
-        cold.millis >= 1_500
+        cold.millis() >= 1_500
     }
 }

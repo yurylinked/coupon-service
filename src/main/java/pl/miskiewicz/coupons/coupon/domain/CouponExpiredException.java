@@ -1,8 +1,8 @@
 package pl.miskiewicz.coupons.coupon.domain;
 
-public final class CouponExpiredException extends RuntimeException {
+public final class CouponExpiredException extends CouponRejectedException {
 
     public CouponExpiredException() {
-        super("Coupon has expired", null, false, false);
+        super("Coupon has expired");
     }
 }

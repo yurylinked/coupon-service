@@ -21,13 +21,20 @@ management:
   endpoints:
     web:
       exposure:
-        include: health
+        include: health, prometheus
   endpoint:
     health:
       probes:
         enabled: true
+  metrics:
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
 
 coupons:
+  retry-after:
+    min: 1s
+    max: 3s
   redemption:
     lock-timeout: 2s
     bulkhead:

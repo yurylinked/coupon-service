@@ -1,8 +1,8 @@
 package pl.miskiewicz.coupons.coupon.domain;
 
-public final class CouponCountryNotAllowedException extends RuntimeException {
+public final class CouponCountryNotAllowedException extends DomainException {
 
     public CouponCountryNotAllowedException() {
-        super("Coupon is not available in the country of the request", null, false, false);
+        super("Coupon is not available in the country of the request");
     }
 }

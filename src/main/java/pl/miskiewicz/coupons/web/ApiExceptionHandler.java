@@ -18,85 +18,76 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
+import pl.miskiewicz.coupons.coupon.application.RedemptionBusyException;
+import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyExistsException;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
-import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponNotYetValidException;
+import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException;
+import pl.miskiewicz.coupons.coupon.domain.DomainException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
-import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionCancelledException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
 
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final String ERROR_CODE = "errorCode";
-    private static final String RETRY_AFTER_SECONDS = "1";
     private static final String CONNECTION_EXCEPTION_SQL_STATE_CLASS = "08";
 
-    @ExceptionHandler(InvalidCouponCodeException.class)
-    ProblemDetail invalidCouponCode(InvalidCouponCodeException ex) {
-        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUPON_CODE, ex.getMessage());
+    private final RetryAfter retryAfter;
+
+    ApiExceptionHandler(RetryAfter retryAfter) {
+        this.retryAfter = retryAfter;
     }
 
-    @ExceptionHandler(InvalidCountryCodeException.class)
-    ProblemDetail invalidCountryCode(InvalidCountryCodeException ex) {
-        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUNTRY_CODE, ex.getMessage());
-    }
-
-    @ExceptionHandler(InvalidUserIdException.class)
-    ProblemDetail invalidUserId(InvalidUserIdException ex) {
-        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID, ex.getMessage());
-    }
-
-    @ExceptionHandler(InvalidExpiryException.class)
-    ProblemDetail invalidExpiry(InvalidExpiryException ex) {
-        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponAlreadyExistsException.class)
-    ProblemDetail couponAlreadyExists(CouponAlreadyExistsException ex) {
-        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponNotFoundException.class)
-    ProblemDetail couponNotFound(CouponNotFoundException ex) {
-        return problem(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND, ex.getMessage());
-    }
-
-    @ExceptionHandler(CountryUnresolvedException.class)
-    ProblemDetail countryUnresolved(CountryUnresolvedException ex) {
-        return problem(HttpStatus.FORBIDDEN, ErrorCode.COUNTRY_UNRESOLVED, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponCountryNotAllowedException.class)
-    ProblemDetail couponCountryNotAllowed(CouponCountryNotAllowedException ex) {
-        return problem(HttpStatus.FORBIDDEN, ErrorCode.COUPON_COUNTRY_NOT_ALLOWED, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponAlreadyUsedByUserException.class)
-    ProblemDetail couponAlreadyUsedByUser(CouponAlreadyUsedByUserException ex) {
-        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponExpiredException.class)
-    ProblemDetail couponExpired(CouponExpiredException ex) {
-        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED, ex.getMessage());
-    }
-
-    @ExceptionHandler(CouponExhaustedException.class)
-    ProblemDetail couponExhausted(CouponExhaustedException ex) {
-        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_EXHAUSTED, ex.getMessage());
+    @ExceptionHandler(DomainException.class)
+    ResponseEntity<ProblemDetail> domainOutcome(DomainException ex) {
+        Mapping mapping = mappingOf(ex);
+        return ResponseEntity.status(mapping.status()).body(problem(mapping.status(), mapping.errorCode(), ex.getMessage()));
     }
 
     @ExceptionHandler(RedemptionBusyException.class)
     ResponseEntity<ProblemDetail> redemptionBusy(RedemptionBusyException ex) {
         return retryLater(problem(HttpStatus.SERVICE_UNAVAILABLE, ErrorCode.REDEMPTION_BUSY, ex.getMessage()));
+    }
+
+    // Exhaustive over the sealed hierarchy: a new domain outcome does not compile until it has an HTTP mapping.
+    static Mapping mappingOf(DomainException ex) {
+        return switch (ex) {
+            case InvalidCouponCodeException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUPON_CODE);
+            case InvalidCountryCodeException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUNTRY_CODE);
+            case InvalidUserIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID);
+            case InvalidIdempotencyKeyException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_IDEMPOTENCY_KEY);
+            case InvalidRedemptionIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REDEMPTION_ID);
+            case InvalidExpiryException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY);
+            case InvalidValidityPeriodException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_VALIDITY_PERIOD);
+            case CouponNotFoundException ignored -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND);
+            case RedemptionNotFoundException ignored -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.REDEMPTION_NOT_FOUND);
+            case CountryUnresolvedException ignored -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUNTRY_UNRESOLVED);
+            case CouponCountryNotAllowedException ignored -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUPON_COUNTRY_NOT_ALLOWED);
+            case CouponAlreadyExistsException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS);
+            case CouponAlreadyUsedByUserException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER);
+            case RedemptionCancelledException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.REDEMPTION_CANCELLED);
+            case CouponExpiredException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED);
+            case CouponSuspendedException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_SUSPENDED);
+            case CouponNotYetValidException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_NOT_YET_VALID);
+            case CouponExhaustedException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXHAUSTED);
+        };
+    }
+
+    record Mapping(HttpStatus status, ErrorCode errorCode) {
     }
 
     @ExceptionHandler(CannotCreateTransactionException.class)
@@ -133,8 +124,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return handleExceptionInternal(ex, body, headers, HttpStatus.BAD_REQUEST, request);
     }
 
-    // Framework exceptions such as 404/405/415 build their ProblemDetail late, inside handleExceptionInternal,
-    // so the errorCode is added at the last step where the final body is known.
+    // Framework errors (404, 405, 415) build their body late, so their errorCode is added here.
     @Override
     protected ResponseEntity<Object> createResponseEntity(
             Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {
@@ -168,9 +158,9 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problemDetail.getProperties() != null && problemDetail.getProperties().containsKey(ERROR_CODE);
     }
 
-    private static ResponseEntity<ProblemDetail> retryLater(ProblemDetail body) {
+    private ResponseEntity<ProblemDetail> retryLater(ProblemDetail body) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+                .header(HttpHeaders.RETRY_AFTER, retryAfter.seconds())
                 .body(body);
     }
 

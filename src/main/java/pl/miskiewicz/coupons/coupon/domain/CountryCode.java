@@ -2,6 +2,7 @@ package pl.miskiewicz.coupons.coupon.domain;
 
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -18,13 +19,15 @@ public record CountryCode(String value) {
     }
 
     public static CountryCode parse(String raw) {
-        if (raw == null) {
-            throw new InvalidCountryCodeException();
-        }
-        String stripped = raw.strip();
+        return tryParse(raw).orElseThrow(InvalidCountryCodeException::new);
+    }
+
+    public static Optional<CountryCode> tryParse(String raw) {
+        String stripped = raw == null ? "" : raw.strip();
         if (!ALPHA_2.matcher(stripped).matches()) {
-            throw new InvalidCountryCodeException();
+            return Optional.empty();
         }
-        return new CountryCode(stripped.toUpperCase(Locale.ROOT));
+        String normalized = stripped.toUpperCase(Locale.ROOT);
+        return ISO_COUNTRIES.contains(normalized) ? Optional.of(new CountryCode(normalized)) : Optional.empty();
     }
 }

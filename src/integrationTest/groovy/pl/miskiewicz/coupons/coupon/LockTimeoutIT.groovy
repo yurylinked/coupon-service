@@ -25,7 +25,7 @@ class LockTimeoutIT extends IntegrationSpec {
 
         then:
         busy.status() == 503
-        busy.header('Retry-After') == '1'
+        busy.header('Retry-After') in ['1', '2', '3']
         busy.body().errorCode == 'REDEMPTION_BUSY'
         waitedMillis >= 1_900 && waitedMillis < 10_000
         retried.status() == 201

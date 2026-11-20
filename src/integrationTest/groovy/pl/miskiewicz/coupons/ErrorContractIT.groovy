@@ -18,14 +18,6 @@ class ErrorContractIT extends IntegrationSpec {
         'GET'    | '/api/v1/redemptions' | null | null               || 405    | 'METHOD_NOT_ALLOWED'
         'POST'   | '/api/v1/coupons'     | 'x'  | 'text/plain'       || 415    | 'UNSUPPORTED_MEDIA_TYPE'
         'POST'   | '/api/v1/coupons'     | '{'  | 'application/json' || 400    | 'MALFORMED_REQUEST'
-    }
-
-    def "a code longer than any valid code is reported as not found, like any other unknown code"() {
-        when:
-        def response = postJson('/api/v1/redemptions', [code: 'A' * 40, userId: 'user-1'])
-
-        then:
-        response.status() == 404
-        response.body().errorCode == 'COUPON_NOT_FOUND'
+        'GET'    | '/api/v1/coupons/' + 'A' * 40 | null | null       || 400    | 'INVALID_COUPON_CODE'
     }
 }

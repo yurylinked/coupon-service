@@ -1,10 +1,5 @@
 package pl.miskiewicz.coupons.coupon
 
-import java.time.Instant
-import java.util.concurrent.Callable
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.ExecutionException
-import java.util.concurrent.Executors
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.transaction.support.TransactionTemplate
 import pl.miskiewicz.coupons.IntegrationSpec
@@ -30,10 +25,10 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         createCoupon('HOT', 10)
 
         when:
-        def outcomes = race(200) { i -> redemptionStore.redeem(HOT, new UserId("user-$i"), PL, Instant.now()) }
+        def outcomes = race(200) { i -> redemptionStore.redeem(HOT, new UserId("user-$i"), PL, null) }
 
         then:
-        outcomes.countBy { it } == [OK: 10, CouponExhaustedException: 190]
+        outcomes.countBy { it } == [Redeemed: 10, NoUseLeft: 190]
         usageRows('HOT') == 10
         currentUses('HOT') == 10
     }
@@ -44,59 +39,25 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         def naiveStore = new NaiveRedemptionStore(jdbcClient, transactionTemplate)
 
         when:
-        race(200) { i -> naiveStore.redeem(HOT, new UserId("user-$i"), PL, Instant.now()) }
+        race(200) { i -> naiveStore.redeem(HOT, new UserId("user-$i"), PL, null) }
 
         then:
         usageRows('HOT') > 10
     }
 
-    def "one user firing 50 parallel requests redeems the coupon once"() {
+    def "one user firing 50 parallel requests at a coupon with #maxUses uses redeems it once"() {
         given:
-        createCoupon('HOT', 100)
+        createCoupon('HOT', maxUses)
 
         when:
-        def outcomes = race(50) { i -> redemptionStore.redeem(HOT, new UserId('same-user'), PL, Instant.now()) }
+        def outcomes = race(50) { i -> redemptionStore.redeem(HOT, new UserId('same-user'), PL, null) }
 
         then:
-        outcomes.countBy { it } == [OK: 1, CouponAlreadyUsedByUserException: 49]
+        outcomes.countBy { it } == [Redeemed: 1, AlreadyRedeemed: 49]
         usageRows('HOT') == 1
         currentUses('HOT') == 1
-    }
 
-    def "one user double-clicking a single-use coupon is told they already used it"() {
-        given:
-        createCoupon('HOT', 1)
-
-        when:
-        def outcomes = race(50) { i -> redemptionStore.redeem(HOT, new UserId('same-user'), PL, Instant.now()) }
-
-        then:
-        outcomes.countBy { it } == [OK: 1, CouponAlreadyUsedByUserException: 49]
-        usageRows('HOT') == 1
-        currentUses('HOT') == 1
-    }
-
-    private static List<String> race(int requests, Closure<?> redemption) {
-        def start = new CountDownLatch(1)
-        def executor = Executors.newVirtualThreadPerTaskExecutor()
-        try {
-            def futures = (1..requests).collect { int i ->
-                executor.submit({
-                    start.await()
-                    redemption.call(i)
-                    'OK'
-                } as Callable<String>)
-            }
-            start.countDown()
-            futures.collect { future ->
-                try {
-                    future.get()
-                } catch (ExecutionException ex) {
-                    ex.cause.class.simpleName
-                }
-            }
-        } finally {
-            executor.close()
-        }
+        where:
+        maxUses << [100, 1]
     }
 }
