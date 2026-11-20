@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
@@ -14,10 +15,12 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
+import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore;
 import pl.miskiewicz.coupons.coupon.domain.UserId;
 
@@ -47,7 +50,7 @@ class JdbcRedemptionStore implements RedemptionStore {
                             SELECT 1
                             FROM coupon_usage u
                             JOIN coupon c ON c.id = u.coupon_id
-                            WHERE c.code = :code AND u.user_id = :userId
+                            WHERE c.code = :code AND u.user_id = :userId AND u.cancelled_at IS NULL
                         )
                         """)
                 .param("code", code.value())
@@ -79,7 +82,7 @@ class JdbcRedemptionStore implements RedemptionStore {
             UUID redemptionId = jdbc.sql("""
                             INSERT INTO coupon_usage (coupon_id, user_id, country_code, used_at)
                             VALUES (:couponId, :userId, :country, :usedAt)
-                            ON CONFLICT (coupon_id, user_id) DO NOTHING
+                            ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
                             RETURNING public_id
                             """)
                     .param("couponId", couponId)
@@ -90,6 +93,70 @@ class JdbcRedemptionStore implements RedemptionStore {
                     .optional()
                     .orElseThrow(CouponAlreadyUsedByUserException::new);
             return new Redemption(redemptionId, code, userId, country, redeemedAt);
+        } catch (DataAccessException ex) {
+            if (isLockTimeout(ex)) {
+                throw new RedemptionBusyException();
+            }
+            throw ex;
+        }
+    }
+
+    @Override
+    public Optional<CouponCode> findCouponCode(UUID redemptionId) {
+        return jdbc.sql("""
+                        SELECT c.code
+                        FROM coupon_usage u
+                        JOIN coupon c ON c.id = u.coupon_id
+                        WHERE u.public_id = :redemptionId
+                        """)
+                .param("redemptionId", redemptionId)
+                .query(String.class)
+                .optional()
+                .map(CouponCode::new);
+    }
+
+    // The coupon row is locked first, in the same order as a redemption, so a cancel and a redemption of the same
+    // coupon queue up instead of deadlocking. The usage state is read only after the lock is held: a second cancel of
+    // the same redemption waits here, then sees the first one committed and changes nothing.
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void cancel(UUID redemptionId, Instant cancelledAt) {
+        try {
+            jdbc.sql(setLockTimeout).update();
+            Long couponId = jdbc.sql("""
+                            SELECT id
+                            FROM coupon
+                            WHERE id = (SELECT coupon_id FROM coupon_usage WHERE public_id = :redemptionId)
+                            FOR UPDATE
+                            """)
+                    .param("redemptionId", redemptionId)
+                    .query(Long.class)
+                    .optional()
+                    .orElseThrow(RedemptionNotFoundException::new);
+            CancellationState state = jdbc.sql("""
+                            SELECT u.cancelled_at IS NOT NULL AS cancelled,
+                                   c.expires_at IS NOT NULL AND c.expires_at <= :now AS expired
+                            FROM coupon_usage u
+                            JOIN coupon c ON c.id = u.coupon_id
+                            WHERE u.public_id = :redemptionId
+                            """)
+                    .param("now", OffsetDateTime.ofInstant(cancelledAt, ZoneOffset.UTC))
+                    .param("redemptionId", redemptionId)
+                    .query(CancellationState.class)
+                    .single();
+            if (state.cancelled()) {
+                return;
+            }
+            if (state.expired()) {
+                throw new CouponExpiredException();
+            }
+            jdbc.sql("UPDATE coupon_usage SET cancelled_at = :cancelledAt WHERE public_id = :redemptionId")
+                    .param("cancelledAt", OffsetDateTime.ofInstant(cancelledAt, ZoneOffset.UTC))
+                    .param("redemptionId", redemptionId)
+                    .update();
+            jdbc.sql("UPDATE coupon SET current_uses = current_uses - 1 WHERE id = :couponId")
+                    .param("couponId", couponId)
+                    .update();
         } catch (DataAccessException ex) {
             if (isLockTimeout(ex)) {
                 throw new RedemptionBusyException();
@@ -110,6 +177,9 @@ class JdbcRedemptionStore implements RedemptionStore {
         return coupons.findByCode(code)
                 .flatMap(coupon -> coupon.rejectionAt(now))
                 .orElseGet(RedemptionBusyException::new);
+    }
+
+    record CancellationState(boolean cancelled, boolean expired) {
     }
 
     private static boolean isLockTimeout(DataAccessException ex) {

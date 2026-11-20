@@ -5,6 +5,10 @@ import groovy.json.JsonSlurper
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.util.concurrent.Callable
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.test.context.SpringBootTest
@@ -93,6 +97,31 @@ abstract class IntegrationSpec extends Specification {
 
     ApiResponse get(String path) {
         send(HttpRequest.newBuilder(uri(path)).GET().build())
+    }
+
+    // Starts every action at the same moment and reports each outcome as OK or the simple name of what it threw.
+    static List<String> race(int requests, Closure<?> redemption) {
+        def start = new CountDownLatch(1)
+        def executor = Executors.newVirtualThreadPerTaskExecutor()
+        try {
+            def futures = (1..requests).collect { int i ->
+                executor.submit({
+                    start.await()
+                    redemption.call(i)
+                    'OK'
+                } as Callable<String>)
+            }
+            start.countDown()
+            futures.collect { future ->
+                try {
+                    future.get()
+                } catch (ExecutionException ex) {
+                    ex.cause.class.simpleName
+                }
+            }
+        } finally {
+            executor.close()
+        }
     }
 
     private URI uri(String path) {

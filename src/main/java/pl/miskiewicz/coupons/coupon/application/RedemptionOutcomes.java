@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
+import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
@@ -15,6 +16,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
 
 // One counter per outcome (never tagged by coupon code, to keep cardinality bounded) and one structured log line
 // per redemption. User ids and client IPs are deliberately not logged.
@@ -22,6 +24,7 @@ import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 public class RedemptionOutcomes {
 
     static final String METRIC = "coupon.redemptions";
+    static final String CANCELLATION_METRIC = "coupon.cancellations";
     private static final Logger LOG = LoggerFactory.getLogger(RedemptionOutcomes.class);
 
     private final MeterRegistry registry;
@@ -50,6 +53,24 @@ public class RedemptionOutcomes {
                 .log("Coupon redemption rejected");
     }
 
+    void cancelled(CouponCode code) {
+        registry.counter(CANCELLATION_METRIC, "outcome", "success").increment();
+        LOG.atInfo()
+                .addKeyValue("event", "coupon.cancellation")
+                .addKeyValue("outcome", "success")
+                .addKeyValue("couponCode", code.value())
+                .log("Coupon redemption cancelled");
+    }
+
+    void cancellationRejected(RuntimeException reason) {
+        String outcome = outcomeOf(reason);
+        registry.counter(CANCELLATION_METRIC, "outcome", outcome).increment();
+        LOG.atInfo()
+                .addKeyValue("event", "coupon.cancellation")
+                .addKeyValue("outcome", outcome)
+                .log("Coupon redemption cancellation rejected");
+    }
+
     private void count(String outcome) {
         registry.counter(METRIC, "outcome", outcome).increment();
     }
@@ -65,6 +86,7 @@ public class RedemptionOutcomes {
             case CouponSuspendedException ignored -> "suspended";
             case CouponNotYetActiveException ignored -> "not_yet_active";
             case CouponExhaustedException ignored -> "exhausted";
+            case RedemptionNotFoundException ignored -> "redemption_not_found";
             case RedemptionBusyException ignored -> "busy";
             default -> "error";
         };

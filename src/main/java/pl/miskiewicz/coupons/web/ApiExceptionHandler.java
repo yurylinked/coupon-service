@@ -33,6 +33,7 @@ import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
+import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
 
 @RestControllerAdvice
 class ApiExceptionHandler extends ResponseEntityExceptionHandler {
@@ -80,6 +81,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CouponNotFoundException.class)
     ProblemDetail couponNotFound(CouponNotFoundException ex) {
         return problem(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND, ex.getMessage());
+    }
+
+    @ExceptionHandler(RedemptionNotFoundException.class)
+    ProblemDetail redemptionNotFound(RedemptionNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ErrorCode.REDEMPTION_NOT_FOUND, ex.getMessage());
     }
 
     @ExceptionHandler(CountryUnresolvedException.class)

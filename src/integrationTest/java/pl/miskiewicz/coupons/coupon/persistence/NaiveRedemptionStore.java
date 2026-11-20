@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -53,7 +54,7 @@ public class NaiveRedemptionStore implements RedemptionStore {
             UUID id = jdbc.sql("""
                             INSERT INTO coupon_usage (coupon_id, user_id, country_code, used_at)
                             VALUES (:couponId, :userId, :country, :usedAt)
-                            ON CONFLICT (coupon_id, user_id) DO NOTHING
+                            ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
                             RETURNING public_id
                             """)
                     .param("couponId", coupon.id())
@@ -65,6 +66,16 @@ public class NaiveRedemptionStore implements RedemptionStore {
                     .orElseThrow(CouponAlreadyUsedByUserException::new);
             return new Redemption(id, code, userId, country, redeemedAt);
         });
+    }
+
+    @Override
+    public Optional<CouponCode> findCouponCode(UUID redemptionId) {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public void cancel(UUID redemptionId, Instant cancelledAt) {
+        throw new UnsupportedOperationException();
     }
 
     private static void simulateProcessing() {
