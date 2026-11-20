@@ -22,10 +22,12 @@ import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyExistsException;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 
@@ -52,6 +54,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID, ex.getMessage());
     }
 
+    @ExceptionHandler(InvalidExpiryException.class)
+    ProblemDetail invalidExpiry(InvalidExpiryException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY, ex.getMessage());
+    }
+
     @ExceptionHandler(CouponAlreadyExistsException.class)
     ProblemDetail couponAlreadyExists(CouponAlreadyExistsException ex) {
         return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS, ex.getMessage());
@@ -75,6 +82,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CouponAlreadyUsedByUserException.class)
     ProblemDetail couponAlreadyUsedByUser(CouponAlreadyUsedByUserException ex) {
         return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponExpiredException.class)
+    ProblemDetail couponExpired(CouponExpiredException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED, ex.getMessage());
     }
 
     @ExceptionHandler(CouponExhaustedException.class)

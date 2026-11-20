@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
@@ -58,13 +59,16 @@ class JdbcRedemptionStore implements RedemptionStore {
             Long couponId = jdbc.sql("""
                             UPDATE coupon
                             SET current_uses = current_uses + 1
-                            WHERE code = :code AND current_uses < max_uses
+                            WHERE code = :code
+                              AND current_uses < max_uses
+                              AND (expires_at IS NULL OR expires_at > :now)
                             RETURNING id
                             """)
                     .param("code", code.value())
+                    .param("now", OffsetDateTime.ofInstant(redeemedAt, ZoneOffset.UTC))
                     .query(Long.class)
                     .optional()
-                    .orElseThrow(() -> noUseLeft(code, userId));
+                    .orElseThrow(() -> noUseLeft(code, userId, redeemedAt));
             UUID redemptionId = jdbc.sql("""
                             INSERT INTO coupon_usage (coupon_id, user_id, country_code, used_at)
                             VALUES (:couponId, :userId, :country, :usedAt)
@@ -89,8 +93,21 @@ class JdbcRedemptionStore implements RedemptionStore {
 
     // A blocked UPDATE re-checks the row after the winner commits and may find no use left. Under READ COMMITTED
     // this next statement sees the winner's committed usage row, so the same user is told they already used it.
-    private RuntimeException noUseLeft(CouponCode code, UserId userId) {
-        return hasRedeemed(code, userId) ? new CouponAlreadyUsedByUserException() : new CouponExhaustedException();
+    // Expiry uses the same instant as the UPDATE (the app clock), so both statements agree on what "now" is.
+    private RuntimeException noUseLeft(CouponCode code, UserId userId, Instant now) {
+        if (hasRedeemed(code, userId)) {
+            return new CouponAlreadyUsedByUserException();
+        }
+        boolean expired = jdbc.sql("""
+                        SELECT expires_at IS NOT NULL AND expires_at <= :now
+                        FROM coupon
+                        WHERE code = :code
+                        """)
+                .param("now", OffsetDateTime.ofInstant(now, ZoneOffset.UTC))
+                .param("code", code.value())
+                .query(Boolean.class)
+                .single();
+        return expired ? new CouponExpiredException() : new CouponExhaustedException();
     }
 
     private static boolean isLockTimeout(DataAccessException ex) {

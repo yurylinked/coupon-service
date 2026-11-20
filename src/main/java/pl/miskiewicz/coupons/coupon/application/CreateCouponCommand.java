@@ -1,4 +1,6 @@
 package pl.miskiewicz.coupons.coupon.application;
 
-public record CreateCouponCommand(String code, int maxUses, String country) {
+import java.time.Instant;
+
+public record CreateCouponCommand(String code, int maxUses, String country, Instant expiresAt) {
 }
