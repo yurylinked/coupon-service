@@ -40,6 +40,9 @@ echo "A 503 is retried after its Retry-After, like a well-behaved client would"
 seq 1 "$requests" | xargs -P "$parallelism" -I{} bash -c 'redeem {}' >> "$results"
 
 current_uses="$(curl -s "${BASE_URL}/api/v1/coupons/${CODE}" | grep -o '"currentUses":[0-9]*' | cut -d: -f2)"
+public_cancel_status="$(curl -s -o /dev/null -w '%{http_code}' -X DELETE "${BASE_URL}/api/v1/redemptions/00000000-0000-7000-8000-000000000000")"
+public_suspend_status="$(curl -s -o /dev/null -w '%{http_code}' -X PATCH "${BASE_URL}/api/v1/coupons/${CODE}" \
+  -H 'Content-Type: application/json' -d '{"active":false}')"
 created="$(grep -c '^201 ' "$results" || true)"
 rejected="$(grep -c '^409 ' "$results" || true)"
 server_errors="$(grep -c '^5' "$results" || true)"
@@ -53,10 +56,13 @@ cut -d' ' -f2 "$results" | sort | uniq -c | sed 's/^/  /'
 echo "Requests that got 503 + Retry-After first and were retried: ${retried}"
 echo
 echo "201 x ${created}, 409 x ${rejected}, 5xx x ${server_errors}, currentUses = ${current_uses}"
+echo "Through the public edge: DELETE redemption -> ${public_cancel_status}, PATCH coupon -> ${public_suspend_status}"
 
-if [[ "$created" == "$max_uses" && "$current_uses" == "$max_uses" && "$server_errors" == "0" ]]; then
-  echo "PASS: exactly ${max_uses} redemptions granted, no request left failing"
+if [[ "$created" == "$max_uses" && "$current_uses" == "$max_uses" && "$server_errors" == "0" \
+      && "$((created + rejected))" == "$requests" \
+      && "$public_cancel_status" == "403" && "$public_suspend_status" == "403" ]]; then
+  echo "PASS: exactly ${max_uses} redemptions granted, every other request refused, admin operations closed at the edge"
 else
-  echo "FAIL: expected exactly ${max_uses} redemptions and no server errors" >&2
+  echo "FAIL: expected exactly ${max_uses} redemptions, ${requests} answers, no server errors and 403 for admin operations" >&2
   exit 1
 fi

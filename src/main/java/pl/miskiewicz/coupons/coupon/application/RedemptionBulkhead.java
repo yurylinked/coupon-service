@@ -7,12 +7,9 @@ import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
-import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 
-// Caps how many redemptions and cancellations of one coupon may wait on its row lock, so a hot coupon cannot hold
-// the whole pool.
-// Coupons are hashed onto a fixed array of fair semaphores: memory stays bounded, at the cost of two coupons
-// occasionally sharing a stripe (about 0.1% of pairs with 1024 stripes).
+// Caps, per instance, the connections busy with one coupon's row lock (holder plus waiters), so a hot coupon cannot
+// take the whole pool. Codes share a fixed array of fair semaphores to keep memory bounded.
 @Component
 public class RedemptionBulkhead {
 

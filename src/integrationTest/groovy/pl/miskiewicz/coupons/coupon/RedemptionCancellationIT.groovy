@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import pl.miskiewicz.coupons.IntegrationSpec
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
+import pl.miskiewicz.coupons.coupon.domain.RedeemAttempt
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore
 import pl.miskiewicz.coupons.coupon.domain.UserId
 
@@ -15,20 +16,25 @@ class RedemptionCancellationIT extends IntegrationSpec {
     @Autowired
     RedemptionStore redemptionStore
 
-    def "cancelling gives the use back, keeps the record and lets the user redeem again"() {
+    def "a redemption can be read back, cancelled, and the user can then redeem again"() {
         given:
         createCoupon('BOOK', 1)
         def first = redeem('BOOK', 'user-1')
+        String id = first.body().redemptionId
 
         when:
-        def cancelled = cancel(first.body().redemptionId)
+        def cancelled = cancel(id)
+        def afterCancel = get("/api/v1/redemptions/${id}")
         def again = redeem('BOOK', 'user-1')
 
         then:
-        first.status() == 201
+        first.header('Location') == "/api/v1/redemptions/${id}"
         cancelled.status() == 204
+        afterCancel.status() == 200
+        afterCancel.body().cancelledAt != null
+        Instant.parse(afterCancel.body().cancelledAt) >= Instant.parse(afterCancel.body().redeemedAt)
         again.status() == 201
-        again.body().redemptionId != first.body().redemptionId
+        again.body().redemptionId != id
         currentUses('BOOK') == 1
         activeUsageRows('BOOK') == 1
         usageRows('BOOK') == 2
@@ -37,11 +43,11 @@ class RedemptionCancellationIT extends IntegrationSpec {
     def "a repeated cancellation changes nothing and still answers 204"() {
         given:
         createCoupon('BOOK', 5)
-        def redemptionId = redeem('BOOK', 'user-1').body().redemptionId
+        String id = redeem('BOOK', 'user-1').body().redemptionId
 
         when:
-        def first = cancel(redemptionId)
-        def second = cancel(redemptionId)
+        def first = cancel(id)
+        def second = cancel(id)
 
         then:
         first.status() == 204
@@ -50,28 +56,28 @@ class RedemptionCancellationIT extends IntegrationSpec {
         activeUsageRows('BOOK') == 0
     }
 
-    def "answers 404 REDEMPTION_NOT_FOUND for #description"() {
+    def "answers #status #errorCode for #description"() {
         when:
         def response = cancel(redemptionId)
 
         then:
-        response.status() == 404
-        response.body().errorCode == 'REDEMPTION_NOT_FOUND'
+        response.status() == status
+        response.body().errorCode == errorCode
 
         where:
-        description            | redemptionId
-        'an unknown id'        | UUID.randomUUID().toString()
-        'something not an id'  | 'not-a-uuid'
+        description           | redemptionId                 || status | errorCode
+        'an unknown id'       | UUID.randomUUID().toString() || 404    | 'REDEMPTION_NOT_FOUND'
+        'something not an id' | 'not-a-uuid'                 || 400    | 'INVALID_REDEMPTION_ID'
     }
 
     def "does not give back a use of an expired coupon"() {
         given:
         postJson('/api/v1/coupons', [code: 'BOOK', maxUses: 5, country: 'PL', expiresAt: '2030-07-01T00:00:00Z'])
-        def redemptionId = redeem('BOOK', 'user-1').body().redemptionId
-        jdbcClient.sql("UPDATE coupon SET expires_at = created_at + interval '1 microsecond' WHERE code = 'BOOK'").update()
+        String id = redeem('BOOK', 'user-1').body().redemptionId
+        expireNow('BOOK')
 
         when:
-        def response = cancel(redemptionId)
+        def response = cancel(id)
 
         then:
         response.status() == 409
@@ -83,11 +89,11 @@ class RedemptionCancellationIT extends IntegrationSpec {
     def "a use returned to an exhausted coupon goes to the next customer"() {
         given:
         createCoupon('BOOK', 1)
-        def redemptionId = redeem('BOOK', 'user-1').body().redemptionId
+        String id = redeem('BOOK', 'user-1').body().redemptionId
         def refused = redeem('BOOK', 'user-2')
 
         when:
-        def cancelled = cancel(redemptionId)
+        def cancelled = cancel(id)
         def granted = redeem('BOOK', 'user-2')
 
         then:
@@ -100,11 +106,11 @@ class RedemptionCancellationIT extends IntegrationSpec {
     def "a use of a suspended coupon can be given back while the coupon stays suspended"() {
         given:
         createCoupon('BOOK', 5)
-        def redemptionId = redeem('BOOK', 'user-1').body().redemptionId
-        request('PATCH', '/api/v1/coupons/BOOK', '{"active":false}', 'application/json')
+        String id = redeem('BOOK', 'user-1').body().redemptionId
+        suspend('BOOK')
 
         when:
-        def cancelled = cancel(redemptionId)
+        def cancelled = cancel(id)
         def refused = redeem('BOOK', 'user-1')
 
         then:
@@ -116,13 +122,13 @@ class RedemptionCancellationIT extends IntegrationSpec {
     def "twenty parallel cancellations of one redemption give the use back exactly once"() {
         given:
         createCoupon('BOOK', 5)
-        def redemption = redemptionStore.redeem(new CouponCode('BOOK'), new UserId('user-1'), PL, Instant.now())
+        def redeemed = redemptionStore.redeem(new CouponCode('BOOK'), new UserId('user-1'), PL, null) as RedeemAttempt.Redeemed
 
         when:
-        def outcomes = race(20) { i -> redemptionStore.cancel(redemption.id(), Instant.now()) }
+        def outcomes = race(20) { i -> redemptionStore.cancel(redeemed.redemption().id()) ? 'cancelled' : 'unchanged' }
 
         then:
-        outcomes.countBy { it } == [OK: 20]
+        outcomes.countBy { it } == [cancelled: 1, unchanged: 19]
         currentUses('BOOK') == 0
         activeUsageRows('BOOK') == 0
     }
@@ -130,45 +136,24 @@ class RedemptionCancellationIT extends IntegrationSpec {
     def "cancelling the last use while another customer redeems it never deadlocks and keeps the counter exact"() {
         given:
         def codes = (1..20).collect { "LAST-$it" as String }
-        def cancellations = codes.collect { code ->
+        def redemptionIds = codes.collect { code ->
             createCoupon(code, 1)
-            redemptionStore.redeem(new CouponCode(code), new UserId('user-1'), PL, Instant.now()).id()
+            (redemptionStore.redeem(new CouponCode(code), new UserId('user-1'), PL, null) as RedeemAttempt.Redeemed).redemption().id()
         }
 
         when:
         def outcomes = codes.indices.collectMany { int index ->
             race(2) { i ->
                 if (i == 1) {
-                    redemptionStore.cancel(cancellations[index], Instant.now())
-                } else {
-                    redemptionStore.redeem(new CouponCode(codes[index]), new UserId('user-2'), PL, Instant.now())
+                    return redemptionStore.cancel(redemptionIds[index]) ? 'cancelled' : 'unchanged'
                 }
+                redemptionStore.redeem(new CouponCode(codes[index]), new UserId('user-2'), PL, null)
             }
         }
 
-        then: 'a redemption that found the coupon full a moment before the use came back is asked to retry, not told it is exhausted'
-        outcomes.every { it in ['OK', 'CouponExhaustedException', 'RedemptionBusyException'] }
+        then:
+        outcomes.every { it in ['cancelled', 'Redeemed', 'NoUseLeft'] }
+        outcomes.count { it == 'cancelled' } == codes.size()
         codes.every { currentUses(it) == activeUsageRows(it) }
-        codes.every { activeUsageRows(it) <= 1 }
-    }
-
-    private def redeem(String code, String userId) {
-        postJson('/api/v1/redemptions', [code: code, userId: userId])
-    }
-
-    private def cancel(String redemptionId) {
-        request('DELETE', "/api/v1/redemptions/${redemptionId}", null, null)
-    }
-
-    private int activeUsageRows(String code) {
-        jdbcClient.sql('''
-                SELECT count(*)
-                FROM coupon_usage u
-                JOIN coupon c ON c.id = u.coupon_id
-                WHERE c.code = :code AND u.cancelled_at IS NULL
-                ''')
-                .param('code', code)
-                .query(Integer)
-                .single()
     }
 }

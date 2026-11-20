@@ -2,6 +2,7 @@
 .gradle
 .idea
 build
-geo
+geo/*
+!geo/dbip-country-lite.mmdb
 deploy
 *.md

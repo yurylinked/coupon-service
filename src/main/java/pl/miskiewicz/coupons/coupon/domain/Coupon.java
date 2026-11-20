@@ -14,6 +14,9 @@ public record Coupon(
         Instant expiresAt,
         boolean active) {
 
+    private static final Instant EARLIEST = Instant.parse("0001-01-01T00:00:00Z");
+    private static final Instant LATEST = Instant.parse("9999-12-31T23:59:59.999999Z");
+
     public Coupon {
         Objects.requireNonNull(code, "code");
         Objects.requireNonNull(country, "country");
@@ -24,10 +27,11 @@ public record Coupon(
         if (currentUses < 0 || currentUses > maxUses) {
             throw new IllegalArgumentException("currentUses must be between 0 and maxUses");
         }
-        if (expiresAt != null && !expiresAt.isAfter(createdAt)) {
+        if (expiresAt != null && (!expiresAt.isAfter(createdAt) || expiresAt.isAfter(LATEST))) {
             throw new InvalidExpiryException();
         }
-        if (validFrom != null && expiresAt != null && !validFrom.isBefore(expiresAt)) {
+        if (validFrom != null && (validFrom.isBefore(EARLIEST) || validFrom.isAfter(LATEST)
+                || expiresAt != null && !validFrom.isBefore(expiresAt))) {
             throw new InvalidValidityPeriodException();
         }
     }
@@ -37,17 +41,16 @@ public record Coupon(
         return new Coupon(code, country, maxUses, 0, createdAt, validFrom, expiresAt, true);
     }
 
-    // The single place that decides why a coupon cannot be redeemed at a given instant. Permanent states come first:
-    // "suspended" on an expired code would suggest it may come back, and "exhausted" can still change after a cancel.
-    public Optional<RuntimeException> rejectionAt(Instant instant) {
+    // Expiry first because it is final; exhausted last because a cancellation can undo it.
+    public Optional<CouponRejectedException> rejectionAt(Instant instant) {
         if (isExpiredAt(instant)) {
             return Optional.of(new CouponExpiredException());
         }
         if (!active) {
             return Optional.of(new CouponSuspendedException());
         }
-        if (isNotYetActiveAt(instant)) {
-            return Optional.of(new CouponNotYetActiveException());
+        if (isNotYetValidAt(instant)) {
+            return Optional.of(new CouponNotYetValidException());
         }
         if (isExhausted()) {
             return Optional.of(new CouponExhaustedException());
@@ -56,7 +59,7 @@ public record Coupon(
     }
 
     public void ensureRedeemableAt(Instant instant) {
-        Optional<RuntimeException> rejection = rejectionAt(instant);
+        Optional<CouponRejectedException> rejection = rejectionAt(instant);
         if (rejection.isPresent()) {
             throw rejection.get();
         }
@@ -70,15 +73,7 @@ public record Coupon(
         return expiresAt != null && !instant.isBefore(expiresAt);
     }
 
-    public boolean isNotYetActiveAt(Instant instant) {
+    public boolean isNotYetValidAt(Instant instant) {
         return validFrom != null && instant.isBefore(validFrom);
-    }
-
-    public Optional<Instant> validityStart() {
-        return Optional.ofNullable(validFrom);
-    }
-
-    public Optional<Instant> expiry() {
-        return Optional.ofNullable(expiresAt);
     }
 }

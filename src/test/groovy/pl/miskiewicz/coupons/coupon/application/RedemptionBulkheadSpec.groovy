@@ -5,7 +5,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
-import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException
+import pl.miskiewicz.coupons.coupon.application.RedemptionBusyException
 import spock.lang.AutoCleanup
 import spock.lang.Specification
 

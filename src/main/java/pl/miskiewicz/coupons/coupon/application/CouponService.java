@@ -1,6 +1,5 @@
 package pl.miskiewicz.coupons.coupon.application;
 
-import java.time.Clock;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
@@ -9,25 +8,26 @@ import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyExistsException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
+import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 
 @Service
 public class CouponService {
 
     private final CouponRepository coupons;
-    private final Clock clock;
 
-    public CouponService(CouponRepository coupons, Clock clock) {
+    public CouponService(CouponRepository coupons) {
         this.coupons = coupons;
-        this.clock = clock;
     }
 
     public Coupon create(CreateCouponCommand command) {
+        CouponCode code = CouponCode.parse(command.code());
+        CountryCode country = CountryCode.parse(command.country());
         Coupon coupon = Coupon.newCoupon(
-                CouponCode.parse(command.code()),
-                CountryCode.parse(command.country()),
+                code,
+                country,
                 command.maxUses(),
-                clock.instant().truncatedTo(ChronoUnit.MICROS),
+                coupons.currentTime(),
                 toMicros(command.validFrom()),
                 toMicros(command.expiresAt()));
         if (!coupons.insertIfAbsent(coupon)) {
@@ -37,16 +37,13 @@ public class CouponService {
     }
 
     public Coupon get(String rawCode) {
-        return CouponCode.tryParse(rawCode)
-                .flatMap(coupons::findByCode)
+        return coupons.findByCode(CouponCode.parse(rawCode))
+                .map(CouponSnapshot::coupon)
                 .orElseThrow(CouponNotFoundException::new);
     }
 
-    // Suspending stops new redemptions at once (the redemption UPDATE checks the flag); redemptions committed before
-    // stay valid. Setting the current value again is a no-op, so operators can safely repeat the call.
     public Coupon setActive(String rawCode, boolean active) {
-        return CouponCode.tryParse(rawCode)
-                .flatMap(code -> coupons.updateActive(code, active))
+        return coupons.setActive(CouponCode.parse(rawCode), active)
                 .orElseThrow(CouponNotFoundException::new);
     }
 

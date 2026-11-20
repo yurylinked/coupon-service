@@ -31,6 +31,14 @@ class ArchitectureSpec extends Specification {
                 .check(classes)
     }
 
+    def "application services depend on ports, never on adapters"() {
+        expect:
+        noClasses().that().resideInAPackage('..coupon.application..')
+                .should().dependOnClassesThat().resideInAnyPackage(
+                        '..coupon.persistence..', '..coupon.web..', '..geo..', 'pl.miskiewicz.coupons.web..')
+                .check(classes)
+    }
+
     def "adapters do not depend on each other"() {
         expect:
         noClasses().that().resideInAnyPackage('..coupon.persistence..', '..geo..')

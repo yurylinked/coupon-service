@@ -7,15 +7,10 @@ COPY src/main src/main
 RUN ./gradlew --no-daemon --quiet bootJar \
     && java -Djarmode=tools -jar build/libs/app.jar extract --layers --destination extracted
 
-FROM public.ecr.aws/docker/library/alpine:3.22 AS geo
-RUN apk add --no-cache bash coreutils curl
-COPY scripts/download-geo-db.sh /usr/local/bin/download-geo-db.sh
-RUN download-geo-db.sh /geo/dbip-country-lite.mmdb
-
 FROM public.ecr.aws/docker/library/eclipse-temurin:25-jre-alpine
 RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 WORKDIR /app
-COPY --from=geo /geo/dbip-country-lite.mmdb geo/dbip-country-lite.mmdb
+COPY geo/dbip-country-lite.mmdb geo/dbip-country-lite.mmdb
 COPY --from=build /workspace/extracted/dependencies/ ./
 COPY --from=build /workspace/extracted/spring-boot-loader/ ./
 COPY --from=build /workspace/extracted/snapshot-dependencies/ ./

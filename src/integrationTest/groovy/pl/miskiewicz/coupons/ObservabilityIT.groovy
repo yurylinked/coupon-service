@@ -14,8 +14,8 @@ class ObservabilityIT extends IntegrationSpec {
     def "exposes redemption outcomes and request latency histograms to Prometheus"() {
         given:
         createCoupon('METRICS', 1)
-        postJson('/api/v1/redemptions', [code: 'METRICS', userId: 'user-1'])
-        postJson('/api/v1/redemptions', [code: 'METRICS', userId: 'user-2'])
+        redeem('METRICS', 'user-1')
+        redeem('METRICS', 'user-2')
 
         when:
         def scrape = http.send(
@@ -24,8 +24,8 @@ class ObservabilityIT extends IntegrationSpec {
 
         then:
         scrape.statusCode() == 200
-        counterLine(scrape.body(), 'success')
-        counterLine(scrape.body(), 'exhausted')
+        counterLine(scrape.body(), 'success').endsWith(' 1.0')
+        counterLine(scrape.body(), 'exhausted').endsWith(' 1.0')
         scrape.body().contains('http_server_requests_seconds_bucket')
         !scrape.body().contains('METRICS')
     }

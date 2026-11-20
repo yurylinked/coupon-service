@@ -37,7 +37,7 @@ class CouponController {
     }
 
     @PatchMapping("/{code}")
-    CouponResponse changeStatus(@PathVariable String code, @Valid @RequestBody CouponStatusRequest request) {
+    CouponResponse setActive(@PathVariable String code, @Valid @RequestBody CouponStatusRequest request) {
         return CouponResponse.from(couponService.setActive(code, request.active()));
     }
 }

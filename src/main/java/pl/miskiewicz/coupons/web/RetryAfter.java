@@ -1,29 +1,28 @@
 package pl.miskiewicz.coupons.web;
 
+import java.time.Duration;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Supplier;
-import java.util.random.RandomGenerator;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-// Clients rejected by the same hot-row stall must not come back as one synchronized wave,
-// so the advertised delay is drawn from a window instead of being a constant.
+// Clients turned away by the same stall should not all come back at the same second.
 @Component
 class RetryAfter {
 
-    private static final int MIN_SECONDS = 1;
-    private static final int MAX_SECONDS = 3;
+    private final long minSeconds;
+    private final long maxSeconds;
 
-    private final Supplier<RandomGenerator> random;
-
-    RetryAfter() {
-        this(ThreadLocalRandom::current);
-    }
-
-    RetryAfter(Supplier<RandomGenerator> random) {
-        this.random = random;
+    RetryAfter(
+            @Value("${coupons.retry-after.min:1s}") Duration min,
+            @Value("${coupons.retry-after.max:3s}") Duration max) {
+        if (min.toSeconds() < 1 || max.compareTo(min) < 0) {
+            throw new IllegalArgumentException("Retry-After needs 1 s <= min <= max");
+        }
+        this.minSeconds = min.toSeconds();
+        this.maxSeconds = max.toSeconds();
     }
 
     String seconds() {
-        return Integer.toString(random.get().nextInt(MIN_SECONDS, MAX_SECONDS + 1));
+        return Long.toString(ThreadLocalRandom.current().nextLong(minSeconds, maxSeconds + 1));
     }
 }

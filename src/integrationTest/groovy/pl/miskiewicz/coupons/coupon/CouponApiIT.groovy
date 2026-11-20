@@ -1,8 +1,5 @@
 package pl.miskiewicz.coupons.coupon
 
-import java.util.concurrent.Callable
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
 import pl.miskiewicz.coupons.IntegrationSpec
 
 class CouponApiIT extends IntegrationSpec {
@@ -36,28 +33,14 @@ class CouponApiIT extends IntegrationSpec {
     }
 
     def "creates exactly one coupon when the same code is submitted concurrently"() {
-        given:
-        int requests = 20
-        def start = new CountDownLatch(1)
-        def executor = Executors.newVirtualThreadPerTaskExecutor()
-
         when:
-        def futures = (1..requests).collect { i ->
-            executor.submit({
-                start.await()
-                postJson('/api/v1/coupons', [code: i % 2 ? 'promo' : 'PROMO', maxUses: 1, country: 'PL']).status()
-            } as Callable<Integer>)
+        def outcomes = race(20) { i ->
+            postJson('/api/v1/coupons', [code: i % 2 ? 'promo' : 'PROMO', maxUses: 1, country: 'PL']).status().toString()
         }
-        start.countDown()
-        def statuses = futures*.get()
 
         then:
-        statuses.count { it == 201 } == 1
-        statuses.count { it == 409 } == requests - 1
+        outcomes.countBy { it } == ['201': 1, '409': 19]
         couponRows('PROMO') == 1
-
-        cleanup:
-        executor.close()
     }
 
     def "returns #errorCode for #description"() {
@@ -70,19 +53,21 @@ class CouponApiIT extends IntegrationSpec {
         response.body().errorCode == errorCode
 
         where:
-        description                  | body                                                 || errorCode
-        'a missing field'            | '{"code":"WIOSNA","country":"PL"}'                   || 'VALIDATION_FAILED'
-        'a code with invalid format' | '{"code":"ab","maxUses":1,"country":"PL"}'           || 'INVALID_COUPON_CODE'
-        'malformed JSON'             | '{"code":'                                           || 'MALFORMED_REQUEST'
+        description                  | body                                        || errorCode
+        'a missing use limit'        | '{"code":"WIOSNA","country":"PL"}'          || 'VALIDATION_FAILED'
+        'a missing code'             | '{"maxUses":1,"country":"PL"}'              || 'INVALID_COUPON_CODE'
+        'a code with invalid format' | '{"code":"ab","maxUses":1,"country":"PL"}'  || 'INVALID_COUPON_CODE'
+        'an unknown country'         | '{"code":"WIOSNA","maxUses":1,"country":"XX"}' || 'INVALID_COUNTRY_CODE'
+        'malformed JSON'             | '{"code":'                                  || 'MALFORMED_REQUEST'
     }
 
-    def "lists every invalid field"() {
+    def "lists every invalid annotated field"() {
         when:
-        def response = postJson('/api/v1/coupons', [code: '', maxUses: 0, country: ''])
+        def response = postJson('/api/v1/coupons', [code: 'WIOSNA', maxUses: 0, country: 'PL'])
 
         then:
         response.status() == 400
-        response.body().errors*.field == ['code', 'country', 'maxUses']
+        response.body().errors*.field == ['maxUses']
     }
 
     def "reads a coupon regardless of the code case"() {

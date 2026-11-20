@@ -1,12 +1,11 @@
 package pl.miskiewicz.coupons.coupon.web;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
 import pl.miskiewicz.coupons.coupon.application.RedeemCouponCommand;
 
-record RedeemCouponRequest(@NotBlank @Size(max = 256) String code, @NotBlank @Size(max = 256) String userId) {
+// Both fields are validated by their value objects, so each has exactly one error code.
+record RedeemCouponRequest(String code, String userId) {
 
-    RedeemCouponCommand toCommand(String clientAddress) {
-        return new RedeemCouponCommand(code, userId, clientAddress);
+    RedeemCouponCommand toCommand(String clientAddress, String idempotencyKey) {
+        return new RedeemCouponCommand(code, userId, clientAddress, idempotencyKey);
     }
 }

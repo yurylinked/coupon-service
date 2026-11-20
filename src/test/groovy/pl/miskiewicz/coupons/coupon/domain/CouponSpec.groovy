@@ -55,12 +55,12 @@ class CouponSpec extends Specification {
         expiresAt << ['2026-11-19T10:00:00Z', '2026-11-19T09:59:59Z']
     }
 
-    def "is not yet active=#notYetActive at #at when valid from #validFrom"() {
+    def "is not yet valid=#notYetValid at #at when valid from #validFrom"() {
         expect:
-        coupon(validFrom: validFrom).isNotYetActiveAt(Instant.parse(at)) == notYetActive
+        coupon(validFrom: validFrom).isNotYetValidAt(Instant.parse(at)) == notYetValid
 
         where:
-        validFrom              | at                         || notYetActive
+        validFrom              | at                         || notYetValid
         null                   | '2000-01-01T00:00:00Z'     || false
         '2026-11-23T00:00:00Z' | '2026-11-22T23:59:59.999Z' || true
         '2026-11-23T00:00:00Z' | '2026-11-23T00:00:00Z'     || false
@@ -94,12 +94,12 @@ class CouponSpec extends Specification {
         '2026-12-01T00:00:00Z' | '2026-11-30T00:00:00Z'
     }
 
-    def "rejects as #rejection when expired=#expired, active=#active, not yet active=#notYetActive, exhausted=#exhausted"() {
+    def "rejects as #rejection when expired=#expired, active=#active, not yet valid=#notYetValid, exhausted=#exhausted"() {
         given:
         def candidate = coupon(
                 currentUses: exhausted ? 10 : 0,
                 active: active,
-                validFrom: notYetActive ? '2026-11-19T10:00:01Z' : null,
+                validFrom: notYetValid ? '2026-11-19T10:00:01Z' : null,
                 expiresAt: expired ? '2026-11-19T10:00:00.000001Z' : null)
         def at = expired ? NOW.plusSeconds(60) : NOW
 
@@ -107,14 +107,33 @@ class CouponSpec extends Specification {
         candidate.rejectionAt(at).map { it.class.simpleName }.orElse('none') == rejection
 
         where:
-        expired | active | notYetActive | exhausted || rejection
+        expired | active | notYetValid  | exhausted || rejection
         false   | true   | false        | false     || 'none'
         true    | false  | false        | true      || 'CouponExpiredException'
         true    | true   | false        | false     || 'CouponExpiredException'
         false   | false  | true         | true      || 'CouponSuspendedException'
         false   | false  | false        | false     || 'CouponSuspendedException'
-        false   | true   | true         | true      || 'CouponNotYetActiveException'
+        false   | true   | true         | true      || 'CouponNotYetValidException'
         false   | true   | false        | true      || 'CouponExhaustedException'
+    }
+
+    def "rejects dates outside the four-digit years the database can store: #description"() {
+        when:
+        coupon(validFrom: validFrom, expiresAt: expiresAt)
+
+        then:
+        thrown(expected)
+
+        where:
+        description                | validFrom                    | expiresAt                       || expected
+        'an expiry after year 9999' | null                        | '+10000-01-01T00:00:00Z'        || InvalidExpiryException
+        'a start before year 1'    | '-0001-12-31T00:00:00Z'      | null                            || InvalidValidityPeriodException
+        'a start after year 9999'  | '+10000-01-01T00:00:00Z'     | null                            || InvalidValidityPeriodException
+    }
+
+    def "accepts the last microsecond of year 9999 as an expiry"() {
+        expect:
+        coupon(expiresAt: '9999-12-31T23:59:59.999999Z').expiresAt() == Instant.parse('9999-12-31T23:59:59.999999Z')
     }
 
     def "throws the rejection when asked to ensure the coupon is redeemable"() {

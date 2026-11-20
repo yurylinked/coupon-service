@@ -10,7 +10,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.GeoLocationResolver;
-import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 
 public final class DbIpGeoLocationResolver implements GeoLocationResolver, AutoCloseable {
 
@@ -27,7 +26,7 @@ public final class DbIpGeoLocationResolver implements GeoLocationResolver, AutoC
         try {
             return reader.tryCountry(address)
                     .map(response -> response.country().isoCode())
-                    .flatMap(DbIpGeoLocationResolver::toCountryCode);
+                    .flatMap(CountryCode::tryParse);
         } catch (IOException | GeoIp2Exception ex) {
             LOG.warn("Geolocation lookup failed, country treated as unresolved", ex);
             return Optional.empty();
@@ -37,13 +36,5 @@ public final class DbIpGeoLocationResolver implements GeoLocationResolver, AutoC
     @Override
     public void close() throws IOException {
         reader.close();
-    }
-
-    private static Optional<CountryCode> toCountryCode(String isoCode) {
-        try {
-            return Optional.of(CountryCode.parse(isoCode));
-        } catch (InvalidCountryCodeException ex) {
-            return Optional.empty();
-        }
     }
 }

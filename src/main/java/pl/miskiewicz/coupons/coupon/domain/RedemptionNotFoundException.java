@@ -1,8 +1,8 @@
 package pl.miskiewicz.coupons.coupon.domain;
 
-public final class RedemptionNotFoundException extends RuntimeException {
+public final class RedemptionNotFoundException extends DomainException {
 
     public RedemptionNotFoundException() {
-        super("Redemption not found", null, false, false);
+        super("Redemption not found");
     }
 }

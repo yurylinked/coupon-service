@@ -70,6 +70,14 @@ abstract class HotCouponSpec extends IntegrationSpec {
         }
     }
 
+    static void awaitCompleted(List<Future<Integer>> requests, int expected) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (requests.count { it.done } < expected) {
+            assert System.nanoTime() < deadline: "expected $expected finished requests, saw ${requests.count { it.done }}"
+            Thread.sleep(10)
+        }
+    }
+
     int transactionsWaitingOnLock() {
         def result = observer.createStatement().executeQuery(
                 "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
@@ -77,13 +85,16 @@ abstract class HotCouponSpec extends IntegrationSpec {
         result.getInt(1)
     }
 
-    Map<String, Long> redeemColdCoupon() {
+    ColdRedemption redeemColdCoupon() {
         long started = System.nanoTime()
-        int status = postJson('/api/v1/redemptions', [code: 'COLD', userId: 'cold-user']).status()
-        [status: status as long, millis: TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started)]
+        int status = redeem('COLD', 'cold-user').status()
+        new ColdRedemption(status, TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started))
     }
 
     List<Integer> statusesOf(List<Future<Integer>> requests) {
         requests.collect { it.get(10, TimeUnit.SECONDS) }
+    }
+
+    record ColdRedemption(int status, long millis) {
     }
 }

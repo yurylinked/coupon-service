@@ -1,4 +1,4 @@
-package pl.miskiewicz.coupons.coupon.domain;
+package pl.miskiewicz.coupons.coupon.application;
 
 public final class RedemptionBusyException extends RuntimeException {
 

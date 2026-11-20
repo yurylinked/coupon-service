@@ -1,8 +1,8 @@
 package pl.miskiewicz.coupons.coupon.domain;
 
-public final class CouponSuspendedException extends RuntimeException {
+public final class CouponSuspendedException extends CouponRejectedException {
 
     public CouponSuspendedException() {
-        super("Coupon is suspended", null, false, false);
+        super("Coupon is suspended");
     }
 }
