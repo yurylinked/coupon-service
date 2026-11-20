@@ -1,10 +1,8 @@
 package pl.miskiewicz.coupons.coupon.application;
 
-import java.time.Duration;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 
@@ -16,18 +14,12 @@ public class RedemptionBulkhead {
     private final Semaphore[] stripes;
     private final long maxWaitNanos;
 
-    public RedemptionBulkhead(
-            @Value("${coupons.redemption.bulkhead.permits-per-stripe:4}") int permitsPerStripe,
-            @Value("${coupons.redemption.bulkhead.stripes:1024}") int stripeCount,
-            @Value("${coupons.redemption.bulkhead.max-wait:200ms}") Duration maxWait) {
-        if (permitsPerStripe < 1 || stripeCount < 1 || maxWait.isNegative()) {
-            throw new IllegalArgumentException("Bulkhead needs at least one permit, one stripe and a non-negative wait");
+    public RedemptionBulkhead(BulkheadProperties properties) {
+        this.stripes = new Semaphore[properties.stripes()];
+        for (int i = 0; i < stripes.length; i++) {
+            stripes[i] = new Semaphore(properties.permitsPerStripe(), true);
         }
-        this.stripes = new Semaphore[stripeCount];
-        for (int i = 0; i < stripeCount; i++) {
-            stripes[i] = new Semaphore(permitsPerStripe, true);
-        }
-        this.maxWaitNanos = maxWait.toNanos();
+        this.maxWaitNanos = properties.maxWait().toNanos();
     }
 
     public <T> T execute(CouponCode code, Supplier<T> action) {

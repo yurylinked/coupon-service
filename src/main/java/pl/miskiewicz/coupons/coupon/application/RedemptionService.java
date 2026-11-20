@@ -31,7 +31,7 @@ public class RedemptionService {
                 .orElseThrow(RedemptionNotFoundException::new);
     }
 
-    // For a cancelled order. Repeating it changes nothing, so the order system can retry safely.
+    // Idempotent, so the order system can retry it.
     public void cancel(String rawRedemptionId) {
         try {
             CancellationResult result = attemptCancel(rawRedemptionId);
@@ -53,16 +53,15 @@ public class RedemptionService {
 
     private boolean cancelAtomically(RedemptionRecord record) {
         try {
-            return redemptions.cancel(new RedemptionId(record.redemption().id()));
+            return redemptions.cancel(record.redemption().id());
         } catch (LockNotAcquiredException ex) {
             throw new RedemptionBusyException();
         }
     }
 
-    // The atomic cancel changed nothing: either another cancel won or the coupon has expired. Anything else is a bug,
-    // reported as one instead of as a retry the order system would repeat forever.
+    // Another cancel won, or the coupon expired. Anything else is a bug, not a retryable 429.
     private CancellationResult whyNotCancelled(RedemptionRecord record) {
-        RedemptionId id = new RedemptionId(record.redemption().id());
+        RedemptionId id = record.redemption().id();
         RedemptionRecord current = redemptions.findById(id)
                 .orElseThrow(() -> new IllegalStateException("Redemption " + id.value() + " disappeared"));
         if (current.cancelled()) {

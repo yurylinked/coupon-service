@@ -1,5 +1,6 @@
 package pl.miskiewicz.coupons.coupon.application
 
+import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
@@ -18,12 +19,15 @@ class HeldPermit implements AutoCloseable {
                 release.await()
             }
         }
-        assert acquired.await(5, TimeUnit.SECONDS)
+        if (!acquired.await(5, TimeUnit.SECONDS)) {
+            holder.interrupt()
+            throw new AssertionError('the holder never got a permit')
+        }
     }
 
     @Override
     void close() {
         release.countDown()
-        holder.join(5_000)
+        assert holder.join(Duration.ofSeconds(5)): 'the holder never released its permit'
     }
 }

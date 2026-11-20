@@ -9,6 +9,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot;
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 
 @Service
@@ -42,8 +43,12 @@ public class CouponService {
                 .orElseThrow(CouponNotFoundException::new);
     }
 
-    public Coupon setActive(String rawCode, boolean active) {
-        return coupons.setActive(CouponCode.parse(rawCode), active)
+    public Coupon setActive(String rawCode, Boolean active) {
+        CouponCode code = CouponCode.parse(rawCode);
+        if (active == null) {
+            throw new InvalidActiveFlagException();
+        }
+        return coupons.setActive(code, active)
                 .orElseThrow(CouponNotFoundException::new);
     }
 

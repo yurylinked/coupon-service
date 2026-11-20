@@ -3,6 +3,7 @@ package pl.miskiewicz.coupons.coupon.persistence;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.support.TransactionTemplate;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
@@ -34,7 +35,7 @@ public class NaiveRedemptionStore implements RedemptionStore {
     }
 
     @Override
-    public RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, IdempotencyKey key) {
+    public RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, @Nullable IdempotencyKey key) {
         return transaction.execute(status -> {
             CouponRow coupon = jdbc.sql("SELECT id, current_uses, max_uses FROM coupon WHERE code = :code")
                     .param("code", code.value())
@@ -49,16 +50,16 @@ public class NaiveRedemptionStore implements RedemptionStore {
                     .param("id", coupon.id())
                     .update();
             Optional<Redemption> inserted = jdbc.sql("""
-                            INSERT INTO coupon_usage (coupon_id, user_id, country_code)
+                            INSERT INTO redemption (coupon_id, user_id, country_code)
                             VALUES (:couponId, :userId, :country)
                             ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
-                            RETURNING public_id, used_at
+                            RETURNING public_id, redeemed_at
                             """)
                     .param("couponId", coupon.id())
                     .param("userId", userId.value())
                     .param("country", country.value())
-                    .query((rs, rowNum) -> new Redemption(rs.getObject("public_id", UUID.class), code, userId, country,
-                            Timestamps.instant(rs, "used_at")))
+                    .query((rs, rowNum) -> new Redemption(new RedemptionId(rs.getObject("public_id", UUID.class)), code,
+                            userId, country, Timestamps.instant(rs, "redeemed_at")))
                     .optional();
             return inserted.<RedeemAttempt>map(RedeemAttempt.Redeemed::new).orElseGet(RedeemAttempt.AlreadyRedeemed::new);
         });

@@ -1,6 +1,5 @@
 package pl.miskiewicz.coupons.coupon.web;
 
-import jakarta.validation.Valid;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,7 +36,7 @@ class CouponController {
     }
 
     @PatchMapping("/{code}")
-    CouponResponse setActive(@PathVariable String code, @Valid @RequestBody CouponStatusRequest request) {
+    CouponResponse setActive(@PathVariable String code, @RequestBody CouponStatusRequest request) {
         return CouponResponse.from(couponService.setActive(code, request.active()));
     }
 }

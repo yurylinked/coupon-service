@@ -1,5 +1,0 @@
-coupons:
-  geo:
-    provider: static
-    static:
-      country: PL

@@ -33,8 +33,7 @@ class JdbcCouponRepository implements CouponRepository {
 
     @Override
     public boolean insertIfAbsent(Coupon coupon) {
-        return jdbc.sql("""
-                        INSERT INTO coupon (code, country_code, max_uses, current_uses, created_at, valid_from, expires_at, active)
+        return jdbc.sql("INSERT INTO coupon (" + COLUMNS + ") " + """
                         VALUES (:code, :country, :maxUses, :currentUses, :createdAt, :validFrom, :expiresAt, :active)
                         ON CONFLICT (code) DO NOTHING
                         """)

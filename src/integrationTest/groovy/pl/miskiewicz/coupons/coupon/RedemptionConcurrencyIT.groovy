@@ -2,6 +2,7 @@ package pl.miskiewicz.coupons.coupon
 
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.transaction.support.TransactionTemplate
+import pl.miskiewicz.coupons.ApiResponse
 import pl.miskiewicz.coupons.IntegrationSpec
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
@@ -29,7 +30,7 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
 
         then:
         outcomes.countBy { it } == [Redeemed: 10, NoUseLeft: 190]
-        usageRows('HOT') == 10
+        redemptionRows('HOT') == 10
         currentUses('HOT') == 10
     }
 
@@ -42,7 +43,7 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         race(200) { i -> naiveStore.redeem(HOT, new UserId("user-$i"), PL, null) }
 
         then:
-        usageRows('HOT') > 10
+        redemptionRows('HOT') > 10
     }
 
     def "one user firing 50 parallel requests at a coupon with #maxUses uses redeems it once"() {
@@ -54,7 +55,7 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
 
         then:
         outcomes.countBy { it } == [Redeemed: 1, AlreadyRedeemed: 49]
-        usageRows('HOT') == 1
+        redemptionRows('HOT') == 1
         currentUses('HOT') == 1
 
         where:
@@ -66,17 +67,22 @@ class RedemptionConcurrencyIT extends IntegrationSpec {
         createCoupon('HOT', 10)
 
         when:
-        def first = race(50) { i -> "${i}:${redeem('HOT', "user-$i").status()}".toString() }
-        def shed = first.findAll { it.endsWith(':429') }.collect { it.tokenize(':')[0] }
-        def retried = shed.collect { i -> redeem('HOT', "user-$i").status() as String }
-        def statuses = first.collect { it.tokenize(':')[1] }.findAll { it != '429' } + retried
+        def first = race(50) { i -> answer(redeem('HOT', "user-$i".toString()), i) }
+        def retried = first.findAll { it.endsWith(' 429') }
+                .collect { it.tokenize(' ').first() }
+                .collect { i -> answer(redeem('HOT', "user-$i".toString()), i) }
+        def finalAnswers = first.findAll { !it.endsWith(' 429') } + retried
 
         then:
-        first.every { it.tokenize(':')[1] in ['201', '409', '429'] }
-        statuses.size() == 50
-        statuses.count { it == '201' } == 10
-        statuses.count { it == '409' } == 40
+        first.every { it.tokenize(' ').last() in ['201', '409', '429'] }
+        finalAnswers.count { it.endsWith(' 201') } == 10
+        finalAnswers.findAll { !it.endsWith(' 201') }.every { it.endsWith('COUPON_EXHAUSTED 409') }
+        finalAnswers.size() == 50
         currentUses('HOT') == 10
-        usageRows('HOT') == 10
+        redemptionRows('HOT') == 10
+    }
+
+    private static String answer(ApiResponse response, Object user) {
+        "$user ${response.body()?.errorCode ?: ''} ${response.status()}".toString().replaceAll(/ +/, ' ')
     }
 }

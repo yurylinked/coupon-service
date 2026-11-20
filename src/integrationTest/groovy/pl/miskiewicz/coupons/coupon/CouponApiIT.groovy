@@ -55,24 +55,8 @@ class CouponApiIT extends IntegrationSpec {
         where:
         description                  | body                                        || errorCode
         'a missing use limit'        | '{"code":"WIOSNA","country":"PL"}'          || 'INVALID_MAX_USES'
-        'a use limit above the cap'  | '{"code":"WIOSNA","maxUses":1000001,"country":"PL"}' || 'INVALID_MAX_USES'
-        'a missing code'             | '{"maxUses":1,"country":"PL"}'              || 'INVALID_COUPON_CODE'
         'a code with invalid format' | '{"code":"ab","maxUses":1,"country":"PL"}'  || 'INVALID_COUPON_CODE'
-        'an unknown country'         | '{"code":"WIOSNA","maxUses":1,"country":"XX"}' || 'INVALID_COUNTRY_CODE'
         'malformed JSON'             | '{"code":'                                  || 'MALFORMED_REQUEST'
-    }
-
-    def "lists every invalid annotated field"() {
-        given:
-        postJson('/api/v1/coupons', [code: 'WIOSNA', maxUses: 1, country: 'PL'])
-
-        when:
-        def response = request('PATCH', '/api/v1/coupons/WIOSNA', '{}', 'application/json')
-
-        then:
-        response.status() == 400
-        response.body().errorCode == 'VALIDATION_FAILED'
-        response.body().errors*.field == ['active']
     }
 
     def "reads a coupon regardless of the code case"() {

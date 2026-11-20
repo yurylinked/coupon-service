@@ -8,6 +8,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository
 import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException
@@ -140,5 +141,14 @@ class CouponServiceSpec extends Specification {
 
         then:
         thrown(CouponNotFoundException)
+    }
+
+    def "rejects a status change without the flag and touches nothing"() {
+        when:
+        service.setActive('WIOSNA', null)
+
+        then:
+        thrown(InvalidActiveFlagException)
+        0 * coupons._
     }
 }

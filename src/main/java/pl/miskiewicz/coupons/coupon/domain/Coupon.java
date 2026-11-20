@@ -70,15 +70,15 @@ public record Coupon(
         }
     }
 
-    public boolean isExhausted() {
+    boolean isExhausted() {
         return currentUses >= maxUses;
     }
 
-    public boolean isExpiredAt(Instant instant) {
+    boolean isExpiredAt(Instant instant) {
         return expiresAt != null && !instant.isBefore(expiresAt);
     }
 
-    public boolean isNotYetValidAt(Instant instant) {
+    boolean isNotYetValidAt(Instant instant) {
         return validFrom != null && instant.isBefore(validFrom);
     }
 }

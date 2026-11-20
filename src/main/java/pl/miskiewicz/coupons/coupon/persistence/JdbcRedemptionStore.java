@@ -5,12 +5,11 @@ import static pl.miskiewicz.coupons.coupon.persistence.Timestamps.utc;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.postgresql.util.PSQLException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -35,9 +34,12 @@ import pl.miskiewicz.coupons.coupon.domain.UserId;
 class JdbcRedemptionStore implements RedemptionStore {
 
     private static final String LOCK_NOT_AVAILABLE = "55P03";
-    private static final String IDEMPOTENCY_KEY_INDEX = "uq_coupon_usage_idempotency_key";
-    private static final String REDEMPTION_COLUMNS =
-            "u.public_id, c.code, u.user_id, u.country_code, u.used_at, u.cancelled_at";
+    private static final String IDEMPOTENCY_KEY_INDEX = "uq_redemption_idempotency_key";
+    private static final String SELECT_REDEMPTION = """
+            SELECT r.public_id, c.code, r.user_id, r.country_code, r.redeemed_at, r.cancelled_at
+            FROM redemption r
+            JOIN coupon c ON c.id = r.coupon_id
+            """;
 
     private final JdbcClient jdbc;
     private final TransactionTemplate transactions;
@@ -46,14 +48,11 @@ class JdbcRedemptionStore implements RedemptionStore {
     JdbcRedemptionStore(
             JdbcClient jdbc,
             PlatformTransactionManager transactionManager,
-            @Value("${coupons.redemption.lock-timeout:2s}") Duration lockTimeout) {
-        if (lockTimeout.toMillis() < 1) {
-            throw new IllegalArgumentException("lock-timeout must be at least 1 ms; 0 would mean waiting forever");
-        }
+            RedemptionLockProperties properties) {
         this.jdbc = jdbc;
         this.transactions = new TransactionTemplate(transactionManager);
         this.transactions.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
-        this.lockTimeout = lockTimeout.toMillis() + "ms";
+        this.lockTimeout = properties.lockTimeout().toMillis() + "ms";
     }
 
     @Override
@@ -61,9 +60,9 @@ class JdbcRedemptionStore implements RedemptionStore {
         return jdbc.sql("""
                         SELECT EXISTS (
                             SELECT 1
-                            FROM coupon_usage u
-                            JOIN coupon c ON c.id = u.coupon_id
-                            WHERE c.code = :code AND u.user_id = :userId AND u.cancelled_at IS NULL
+                            FROM redemption r
+                            JOIN coupon c ON c.id = r.coupon_id
+                            WHERE c.code = :code AND r.user_id = :userId AND r.cancelled_at IS NULL
                         )
                         """)
                 .param("code", code.value())
@@ -73,9 +72,9 @@ class JdbcRedemptionStore implements RedemptionStore {
     }
 
     @Override
-    public RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, IdempotencyKey key) {
+    public RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, @Nullable IdempotencyKey key) {
         return inTransaction(status -> {
-            // Validity is judged at the moment the statement arrived, and that same instant is recorded as used_at.
+            // Validity is judged at the instant the statement arrived; the same instant becomes redeemed_at.
             Optional<Grant> grant = jdbc.sql("""
                             UPDATE coupon
                             SET current_uses = current_uses + 1
@@ -84,28 +83,29 @@ class JdbcRedemptionStore implements RedemptionStore {
                               AND current_uses < max_uses
                               AND (valid_from IS NULL OR valid_from <= statement_timestamp())
                               AND (expires_at IS NULL OR expires_at > statement_timestamp())
-                            RETURNING id, statement_timestamp() AS granted_at
+                            RETURNING id, statement_timestamp() AS redeemed_at
                             """)
                     .param("code", code.value())
-                    .query((rs, rowNum) -> new Grant(rs.getLong("id"), instant(rs, "granted_at")))
+                    .query((rs, rowNum) -> new Grant(rs.getLong("id"), instant(rs, "redeemed_at")))
                     .optional();
             if (grant.isEmpty()) {
                 return hasRedeemed(code, userId) ? new RedeemAttempt.AlreadyRedeemed() : new RedeemAttempt.NoUseLeft();
             }
             try {
                 Optional<Redemption> inserted = jdbc.sql("""
-                                INSERT INTO coupon_usage (coupon_id, user_id, country_code, idempotency_key, used_at)
-                                VALUES (:couponId, :userId, :country, :idempotencyKey, :usedAt)
+                                INSERT INTO redemption (coupon_id, user_id, country_code, idempotency_key, redeemed_at)
+                                VALUES (:couponId, :userId, :country, :idempotencyKey, :redeemedAt)
                                 ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
-                                RETURNING public_id, used_at
+                                RETURNING public_id, redeemed_at
                                 """)
                         .param("couponId", grant.get().couponId())
-                        .param("usedAt", utc(grant.get().grantedAt()))
+                        .param("redeemedAt", utc(grant.get().redeemedAt()))
                         .param("userId", userId.value())
                         .param("country", country.value())
                         .param("idempotencyKey", key == null ? null : key.value())
                         .query((rs, rowNum) -> new Redemption(
-                                rs.getObject("public_id", UUID.class), code, userId, country, instant(rs, "used_at")))
+                                new RedemptionId(rs.getObject("public_id", UUID.class)), code, userId, country,
+                                instant(rs, "redeemed_at")))
                         .optional();
                 if (inserted.isEmpty()) {
                     status.setRollbackOnly();
@@ -125,11 +125,7 @@ class JdbcRedemptionStore implements RedemptionStore {
 
     @Override
     public Optional<RedemptionRecord> findById(RedemptionId redemptionId) {
-        return jdbc.sql("SELECT " + REDEMPTION_COLUMNS + """
-                         FROM coupon_usage u
-                        JOIN coupon c ON c.id = u.coupon_id
-                        WHERE u.public_id = :redemptionId
-                        """)
+        return jdbc.sql(SELECT_REDEMPTION + "WHERE r.public_id = :redemptionId")
                 .param("redemptionId", redemptionId.value())
                 .query((rs, rowNum) -> mapRecord(rs))
                 .optional();
@@ -137,11 +133,8 @@ class JdbcRedemptionStore implements RedemptionStore {
 
     @Override
     public Optional<RedemptionRecord> findByIdempotencyKey(CouponCode code, UserId userId, IdempotencyKey key) {
-        return jdbc.sql("SELECT " + REDEMPTION_COLUMNS + """
-                         FROM coupon_usage u
-                        JOIN coupon c ON c.id = u.coupon_id
-                        WHERE c.code = :code AND u.user_id = :userId AND u.idempotency_key = :key
-                        """)
+        return jdbc.sql(SELECT_REDEMPTION
+                        + "WHERE c.code = :code AND r.user_id = :userId AND r.idempotency_key = :key")
                 .param("code", code.value())
                 .param("userId", userId.value())
                 .param("key", key.value())
@@ -149,14 +142,14 @@ class JdbcRedemptionStore implements RedemptionStore {
                 .optional();
     }
 
-    // The usage row is updated only after the coupon lock is held, so a concurrent second cancel sees the first.
+    // The redemption row is updated only after the coupon lock is held, so a concurrent second cancel sees the first.
     @Override
     public boolean cancel(RedemptionId redemptionId) {
         return inTransaction(status -> {
             Optional<Long> couponId = jdbc.sql("""
                             SELECT id
                             FROM coupon
-                            WHERE id = (SELECT coupon_id FROM coupon_usage WHERE public_id = :redemptionId)
+                            WHERE id = (SELECT coupon_id FROM redemption WHERE public_id = :redemptionId)
                             FOR NO KEY UPDATE
                             """)
                     .param("redemptionId", redemptionId.value())
@@ -166,12 +159,12 @@ class JdbcRedemptionStore implements RedemptionStore {
                 return false;
             }
             int cancelled = jdbc.sql("""
-                            UPDATE coupon_usage u
+                            UPDATE redemption r
                             SET cancelled_at = statement_timestamp()
                             FROM coupon c
-                            WHERE u.public_id = :redemptionId
-                              AND u.cancelled_at IS NULL
-                              AND c.id = u.coupon_id
+                            WHERE r.public_id = :redemptionId
+                              AND r.cancelled_at IS NULL
+                              AND c.id = r.coupon_id
                               AND (c.expires_at IS NULL OR c.expires_at > statement_timestamp())
                             """)
                     .param("redemptionId", redemptionId.value())
@@ -213,17 +206,17 @@ class JdbcRedemptionStore implements RedemptionStore {
                 && constraint.equals(psql.getServerErrorMessage().getConstraint());
     }
 
-    private record Grant(long couponId, Instant grantedAt) {
-    }
-
     private static RedemptionRecord mapRecord(ResultSet rs) throws SQLException {
         return new RedemptionRecord(
                 new Redemption(
-                        rs.getObject("public_id", UUID.class),
+                        new RedemptionId(rs.getObject("public_id", UUID.class)),
                         new CouponCode(rs.getString("code")),
                         new UserId(rs.getString("user_id")),
                         new CountryCode(rs.getString("country_code")),
-                        instant(rs, "used_at")),
+                        instant(rs, "redeemed_at")),
                 instant(rs, "cancelled_at"));
+    }
+
+    private record Grant(long couponId, Instant redeemedAt) {
     }
 }

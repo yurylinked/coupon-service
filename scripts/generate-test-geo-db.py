@@ -1,3 +1,6 @@
+# Regenerates src/test/resources/geo/test-country.mmdb: pip install mmdb-writer netaddr, then
+# python3 scripts/generate-test-geo-db.py src/test/resources/geo/test-country.mmdb
+
 import sys
 
 from mmdb_writer import MMDBWriter

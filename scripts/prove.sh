@@ -13,7 +13,7 @@ trap 'rm -f "$results"' EXIT
 redeem() {
   local user="$1" attempt status served retry_after
   for attempt in 1 2 3 4 5; do
-    read -r status served retry_after < <(curl -s -o /dev/null \
+    read -r status served retry_after < <(curl -s --max-time 30 -o /dev/null \
       -w '%{http_code} %header{x-served-by} %header{retry-after}\n' \
       -X POST "${BASE_URL}/api/v1/redemptions" \
       -H 'Content-Type: application/json' \
@@ -28,7 +28,7 @@ redeem() {
 export -f redeem
 
 status_of() {
-  curl -s -o /dev/null -w '%{http_code}' "$@"
+  curl -s --max-time 30 -o /dev/null -w '%{http_code}' "$@"
 }
 
 echo "Creating coupon ${CODE} with ${max_uses} uses through the internal edge"
@@ -41,10 +41,10 @@ if [[ "$create_status" != "201" ]]; then
 fi
 
 echo "Firing ${requests} redemptions through the public edge, ${parallelism} at a time, each from a different user"
-echo "A 429 or 503 is retried after its Retry-After, like a well-behaved client would"
+echo "A 429 or 503 is retried after its Retry-After, as a well-behaved client would"
 seq 1 "$requests" | xargs -P "$parallelism" -I{} bash -c 'redeem {}' >> "$results"
 
-current_uses="$(curl -s "${admin_url}/api/v1/coupons/${CODE}" | grep -o '"currentUses":[0-9]*' | cut -d: -f2)"
+current_uses="$(curl -s --max-time 30 "${admin_url}/api/v1/coupons/${CODE}" | grep -o '"currentUses":[0-9]*' | cut -d: -f2)"
 created="$(grep -c '^201 ' "$results" || true)"
 rejected="$(grep -c '^409 ' "$results" || true)"
 server_errors="$(grep -c '^5' "$results" || true)"

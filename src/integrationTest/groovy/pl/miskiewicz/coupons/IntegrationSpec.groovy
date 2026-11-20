@@ -5,22 +5,29 @@ import groovy.json.JsonSlurper
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.sql.Connection
+import java.sql.DriverManager
+import java.time.Duration
 import java.util.concurrent.Callable
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.context.ActiveProfiles
+import org.testcontainers.postgresql.PostgreSQLContainer
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import spock.lang.AutoCleanup
 import spock.lang.Shared
 import spock.lang.Specification
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@AutoConfigureMetrics
 @Import([PostgresTestcontainer, TestGeoConfiguration])
 @ActiveProfiles('test')
 abstract class IntegrationSpec extends Specification {
@@ -34,15 +41,26 @@ abstract class IntegrationSpec extends Specification {
     @Autowired
     TestGeoLocationResolver geo
 
+    @Autowired
+    PostgreSQLContainer postgres
+
+    static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30)
+
+    private Connection observer
+
     @Shared
     @AutoCleanup
     HttpClient http = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1).build()
 
     def setup() {
-        jdbcClient.sql('TRUNCATE coupon_usage, coupon RESTART IDENTITY').update()
+        jdbcClient.sql('TRUNCATE redemption, coupon RESTART IDENTITY').update()
         requestsComeFrom('PL')
         geo.pause = null
         geo.lastLookup = null
+    }
+
+    def cleanup() {
+        observer?.close()
     }
 
     void requestsComeFrom(String country) {
@@ -70,8 +88,8 @@ abstract class IntegrationSpec extends Specification {
         request('DELETE', "/api/v1/redemptions/${redemptionId}", null, null)
     }
 
-    ApiResponse suspend(String code) {
-        request('PATCH', "/api/v1/coupons/${code}", '{"active":false}', 'application/json')
+    ApiResponse setActive(String code, boolean active) {
+        request('PATCH', "/api/v1/coupons/${code}", JsonOutput.toJson([active: active]), 'application/json')
     }
 
     void expireNow(String code) {
@@ -80,19 +98,43 @@ abstract class IntegrationSpec extends Specification {
                 .update()
     }
 
-    int usageRows(String code) {
-        jdbcClient.sql('SELECT count(*) FROM coupon_usage u JOIN coupon c ON c.id = u.coupon_id WHERE c.code = :code')
+    // A connection outside the application's pool, so it still works while a test exhausts the pool.
+    Connection sideConnection() {
+        DriverManager.getConnection(postgres.jdbcUrl, postgres.username, postgres.password)
+    }
+
+    int transactionsWaitingOnLock() {
+        observer = observer ?: sideConnection()
+        def result = observer.createStatement().executeQuery(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()")
+        result.next()
+        result.getInt(1)
+    }
+
+    void awaitTransactionsWaitingOnLock(int expected) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        int observedMax = 0
+        int waiting
+        while ((waiting = transactionsWaitingOnLock()) < expected) {
+            observedMax = Math.max(observedMax, waiting)
+            assert System.nanoTime() < deadline: "expected $expected transactions waiting on a lock, saw at most $observedMax"
+            Thread.sleep(10)
+        }
+    }
+
+    int redemptionRows(String code) {
+        jdbcClient.sql('SELECT count(*) FROM redemption r JOIN coupon c ON c.id = r.coupon_id WHERE c.code = :code')
                 .param('code', code)
                 .query(Integer)
                 .single()
     }
 
-    int activeUsageRows(String code) {
+    int activeRedemptionRows(String code) {
         jdbcClient.sql('''
                 SELECT count(*)
-                FROM coupon_usage u
-                JOIN coupon c ON c.id = u.coupon_id
-                WHERE c.code = :code AND u.cancelled_at IS NULL
+                FROM redemption r
+                JOIN coupon c ON c.id = r.coupon_id
+                WHERE c.code = :code AND r.cancelled_at IS NULL
                 ''')
                 .param('code', code)
                 .query(Integer)
@@ -119,7 +161,7 @@ abstract class IntegrationSpec extends Specification {
     }
 
     ApiResponse postRaw(String path, String body, Map<String, String> headers) {
-        def request = HttpRequest.newBuilder(uri(path))
+        def request = HttpRequest.newBuilder(uri(path)).timeout(REQUEST_TIMEOUT)
                 .header('Content-Type', 'application/json')
                 .POST(HttpRequest.BodyPublishers.ofString(body))
         headers.each { name, value -> request.header(name, value) }
@@ -127,7 +169,7 @@ abstract class IntegrationSpec extends Specification {
     }
 
     ApiResponse request(String method, String path, String body, String contentType) {
-        def builder = HttpRequest.newBuilder(uri(path))
+        def builder = HttpRequest.newBuilder(uri(path)).timeout(REQUEST_TIMEOUT)
                 .method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body))
         if (contentType != null) {
             builder.header('Content-Type', contentType)
@@ -136,11 +178,10 @@ abstract class IntegrationSpec extends Specification {
     }
 
     ApiResponse get(String path) {
-        send(HttpRequest.newBuilder(uri(path)).GET().build())
+        send(HttpRequest.newBuilder(uri(path)).timeout(REQUEST_TIMEOUT).GET().build())
     }
 
-    // Starts every action at the same moment. Each outcome is the returned string, the simple class name of the
-    // returned value, or the simple class name of what was thrown.
+    // Releases all actions at once; an outcome is a returned String, else the simple class name of the result or exception.
     static List<String> race(int requests, Closure<?> action) {
         def start = new CountDownLatch(1)
         def executor = Executors.newVirtualThreadPerTaskExecutor()
@@ -155,7 +196,7 @@ abstract class IntegrationSpec extends Specification {
             start.countDown()
             futures.collect { future ->
                 try {
-                    future.get()
+                    future.get(60, TimeUnit.SECONDS)
                 } catch (ExecutionException ex) {
                     ex.cause.class.simpleName
                 }

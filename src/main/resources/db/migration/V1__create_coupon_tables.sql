@@ -17,22 +17,22 @@ CREATE TABLE coupon (
     CONSTRAINT ck_coupon_valid_from_before_expiry CHECK (valid_from IS NULL OR expires_at IS NULL OR valid_from < expires_at)
 );
 
-CREATE TABLE coupon_usage (
+CREATE TABLE redemption (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     public_id UUID NOT NULL DEFAULT uuidv7(),
     coupon_id BIGINT NOT NULL REFERENCES coupon (id),
     user_id VARCHAR(64) NOT NULL,
     country_code CHAR(2) NOT NULL,
     idempotency_key VARCHAR(64),
-    used_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
+    redeemed_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
     cancelled_at TIMESTAMPTZ,
-    CONSTRAINT uq_coupon_usage_public_id UNIQUE (public_id),
-    CONSTRAINT ck_coupon_usage_user_id CHECK (char_length(user_id) BETWEEN 1 AND 64),
-    CONSTRAINT ck_coupon_usage_country_format CHECK (country_code ~ '^[A-Z]{2}$'),
-    CONSTRAINT ck_coupon_usage_idempotency_key CHECK (idempotency_key IS NULL OR idempotency_key ~ '^[A-Za-z0-9._:-]{1,64}$'),
-    CONSTRAINT ck_coupon_usage_cancelled_after_use CHECK (cancelled_at IS NULL OR cancelled_at >= used_at)
+    CONSTRAINT uq_redemption_public_id UNIQUE (public_id),
+    CONSTRAINT ck_redemption_user_id CHECK (char_length(user_id) BETWEEN 1 AND 64),
+    CONSTRAINT ck_redemption_country_format CHECK (country_code ~ '^[A-Z]{2}$'),
+    CONSTRAINT ck_redemption_idempotency_key CHECK (idempotency_key IS NULL OR idempotency_key ~ '^[A-Za-z0-9._:-]{1,64}$'),
+    CONSTRAINT ck_redemption_cancelled_after_redeemed CHECK (cancelled_at IS NULL OR cancelled_at >= redeemed_at)
 );
 
-CREATE UNIQUE INDEX uq_coupon_usage_active_coupon_user ON coupon_usage (coupon_id, user_id) WHERE cancelled_at IS NULL;
+CREATE UNIQUE INDEX uq_redemption_active_coupon_user ON redemption (coupon_id, user_id) WHERE cancelled_at IS NULL;
 
-CREATE UNIQUE INDEX uq_coupon_usage_idempotency_key ON coupon_usage (coupon_id, user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;
+CREATE UNIQUE INDEX uq_redemption_idempotency_key ON redemption (coupon_id, user_id, idempotency_key) WHERE idempotency_key IS NOT NULL;

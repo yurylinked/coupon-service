@@ -29,9 +29,9 @@ class HotCouponBulkheadIT extends HotCouponSpec {
 
         when:
         releaseHotCouponRow()
+        def statuses = statusesOf(hotRequests)
 
         then:
-        def statuses = statusesOf(hotRequests)
         statuses.every { it in [201, 429] }
         statuses.count { it == 429 } >= HOT_REQUESTS - permitsPerStripe
     }

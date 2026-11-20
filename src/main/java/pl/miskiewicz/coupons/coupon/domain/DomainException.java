@@ -9,6 +9,7 @@ public abstract sealed class DomainException extends RuntimeException
                 CouponCountryNotAllowedException,
                 CouponNotFoundException,
                 CouponRejectedException,
+                InvalidActiveFlagException,
                 InvalidCountryCodeException,
                 InvalidCouponCodeException,
                 InvalidExpiryException,

@@ -12,7 +12,9 @@ import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException
+import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException
 import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException
@@ -30,6 +32,8 @@ class RedemptionOutcomesSpec extends Specification {
         reason                                   || outcome
         new InvalidUserIdException()             || 'invalid_user'
         new InvalidIdempotencyKeyException()     || 'invalid_idempotency_key'
+        new InvalidMaxUsesException()            || 'invalid_max_uses'
+        new InvalidActiveFlagException()         || 'invalid_active_flag'
         new InvalidCouponCodeException()         || 'invalid_code'
         new InvalidRedemptionIdException()       || 'invalid_redemption_id'
         new InvalidCountryCodeException()        || 'invalid_country'

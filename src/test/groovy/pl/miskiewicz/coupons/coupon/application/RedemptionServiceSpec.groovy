@@ -25,14 +25,14 @@ class RedemptionServiceSpec extends Specification {
     static final UUID ID = UUID.fromString('019a9f3e-7c2b-7d41-9a3e-5b6c7d8e9f01')
     static final RedemptionId RID = new RedemptionId(ID)
     static final CouponCode BOOK = new CouponCode('BOOK')
-    static final Redemption REDEMPTION = new Redemption(ID, BOOK, new UserId('user-1'), new CountryCode('PL'), NOW.minusSeconds(60))
+    static final Redemption REDEMPTION = new Redemption(RID, BOOK, new UserId('user-1'), new CountryCode('PL'), NOW.minusSeconds(60))
     static final RedemptionRecord ACTIVE = new RedemptionRecord(REDEMPTION, null)
     static final RedemptionRecord CANCELLED = new RedemptionRecord(REDEMPTION, NOW)
 
     RedemptionStore redemptions = Mock()
     CouponRepository coupons = Mock()
     SimpleMeterRegistry meters = new SimpleMeterRegistry()
-    RedemptionBulkhead bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
+    RedemptionBulkhead bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
     RedemptionService service = new RedemptionService(
             redemptions, coupons, bulkhead, new RedemptionOutcomes(meters))
 
@@ -88,29 +88,36 @@ class RedemptionServiceSpec extends Specification {
         cancellations('already_cancelled') == 1
     }
 
-    def "when the atomic cancel changes nothing, decides why: #reason"() {
+    def "when the atomic cancel changes nothing because another cancel won, answers success"() {
         given:
-        redemptions.findById(RID) >>> [Optional.of(ACTIVE), Optional.of(current)]
+        redemptions.findById(RID) >>> [Optional.of(ACTIVE), Optional.of(CANCELLED)]
+        redemptions.cancel(RID) >> false
+
+        when:
+        service.cancel(ID.toString())
+
+        then:
+        noExceptionThrown()
+        cancellations('already_cancelled') == 1
+    }
+
+    def "when the atomic cancel changes nothing and #reason, refuses with #expected.simpleName"() {
+        given:
+        redemptions.findById(RID) >>> [Optional.of(ACTIVE), Optional.of(ACTIVE)]
         redemptions.cancel(RID) >> false
         coupons.findByCode(BOOK) >> Optional.of(new CouponSnapshot(coupon, NOW))
 
         when:
-        Throwable failure = null
-        try {
-            service.cancel(ID.toString())
-        } catch (RuntimeException ex) {
-            failure = ex
-        }
+        service.cancel(ID.toString())
 
         then:
-        failure?.class == expected
+        thrown(expected)
         cancellations(outcome) == 1
 
         where:
-        reason                                  | current   | coupon                       || expected                | outcome
-        'another cancel committed meanwhile'    | CANCELLED | coupon(null)                 || null                    | 'already_cancelled'
-        'the coupon has expired'                | ACTIVE    | coupon(NOW)                  || CouponExpiredException  | 'expired'
-        'nothing explains it, so it is a bug'   | ACTIVE    | coupon(null)                 || IllegalStateException   | 'error'
+        reason                      | coupon       || expected               | outcome
+        'the coupon has expired'    | coupon(NOW)  || CouponExpiredException | 'expired'
+        'nothing explains it (bug)' | coupon(null) || IllegalStateException  | 'error'
     }
 
     def "a cancel waits its turn in the same bulkhead as redemptions of the coupon"() {

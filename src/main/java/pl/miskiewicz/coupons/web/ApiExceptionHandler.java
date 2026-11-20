@@ -1,8 +1,6 @@
 package pl.miskiewicz.coupons.web;
 
 import java.sql.SQLException;
-import java.util.Comparator;
-import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -13,7 +11,6 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.CannotGetJdbcConnectionException;
 import org.springframework.transaction.CannotCreateTransactionException;
-import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -32,6 +29,7 @@ import pl.miskiewicz.coupons.coupon.domain.DomainException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException;
@@ -66,34 +64,6 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
                 problem(HttpStatus.TOO_MANY_REQUESTS, ErrorCode.REDEMPTION_BUSY, ex.getMessage()));
     }
 
-    // Exhaustive over the sealed hierarchy: a new domain outcome does not compile until it has an HTTP mapping.
-    static Mapping mappingOf(DomainException ex) {
-        return switch (ex) {
-            case InvalidCouponCodeException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUPON_CODE);
-            case InvalidCountryCodeException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUNTRY_CODE);
-            case InvalidUserIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID);
-            case InvalidIdempotencyKeyException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_IDEMPOTENCY_KEY);
-            case InvalidMaxUsesException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_MAX_USES);
-            case InvalidRedemptionIdException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REDEMPTION_ID);
-            case InvalidExpiryException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY);
-            case InvalidValidityPeriodException ignored -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_VALIDITY_PERIOD);
-            case CouponNotFoundException ignored -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND);
-            case RedemptionNotFoundException ignored -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.REDEMPTION_NOT_FOUND);
-            case CountryUnresolvedException ignored -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUNTRY_UNRESOLVED);
-            case CouponCountryNotAllowedException ignored -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUPON_COUNTRY_NOT_ALLOWED);
-            case CouponAlreadyExistsException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS);
-            case CouponAlreadyUsedByUserException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER);
-            case RedemptionCancelledException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.REDEMPTION_CANCELLED);
-            case CouponExpiredException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED);
-            case CouponSuspendedException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_SUSPENDED);
-            case CouponNotYetValidException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_NOT_YET_VALID);
-            case CouponExhaustedException ignored -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXHAUSTED);
-        };
-    }
-
-    record Mapping(HttpStatus status, ErrorCode errorCode) {
-    }
-
     @ExceptionHandler(CannotCreateTransactionException.class)
     ResponseEntity<ProblemDetail> transactionUnavailable(CannotCreateTransactionException ex) {
         LOG.warn("Could not open a database transaction", ex);
@@ -114,18 +84,6 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     ResponseEntity<ProblemDetail> unexpected(Exception ex) {
         LOG.error("Unexpected error", ex);
         return ResponseEntity.internalServerError().body(internalError());
-    }
-
-    @Override
-    protected ResponseEntity<Object> handleMethodArgumentNotValid(
-            MethodArgumentNotValidException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
-        ProblemDetail body = problem(HttpStatus.BAD_REQUEST, ErrorCode.VALIDATION_FAILED, "Request validation failed");
-        List<FieldViolation> errors = ex.getBindingResult().getFieldErrors().stream()
-                .map(error -> new FieldViolation(error.getField(), String.valueOf(error.getDefaultMessage())))
-                .sorted(Comparator.comparing(FieldViolation::field).thenComparing(FieldViolation::message))
-                .toList();
-        body.setProperty("errors", errors);
-        return handleExceptionInternal(ex, body, headers, HttpStatus.BAD_REQUEST, request);
     }
 
     // Framework errors (404, 405, 415) build their body late, so their errorCode is added here.
@@ -181,5 +139,33 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
         problemDetail.setProperty(ERROR_CODE, errorCode.name());
         return problemDetail;
+    }
+
+    static Mapping mappingOf(DomainException ex) {
+        return switch (ex) {
+            case InvalidCouponCodeException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUPON_CODE);
+            case InvalidCountryCodeException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_COUNTRY_CODE);
+            case InvalidUserIdException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_USER_ID);
+            case InvalidIdempotencyKeyException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_IDEMPOTENCY_KEY);
+            case InvalidActiveFlagException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_ACTIVE_FLAG);
+            case InvalidMaxUsesException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_MAX_USES);
+            case InvalidRedemptionIdException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_REDEMPTION_ID);
+            case InvalidExpiryException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY);
+            case InvalidValidityPeriodException _ -> new Mapping(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_VALIDITY_PERIOD);
+            case CouponNotFoundException _ -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.COUPON_NOT_FOUND);
+            case RedemptionNotFoundException _ -> new Mapping(HttpStatus.NOT_FOUND, ErrorCode.REDEMPTION_NOT_FOUND);
+            case CountryUnresolvedException _ -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUNTRY_UNRESOLVED);
+            case CouponCountryNotAllowedException _ -> new Mapping(HttpStatus.FORBIDDEN, ErrorCode.COUPON_COUNTRY_NOT_ALLOWED);
+            case CouponAlreadyExistsException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS);
+            case CouponAlreadyUsedByUserException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_ALREADY_USED_BY_USER);
+            case RedemptionCancelledException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.REDEMPTION_CANCELLED);
+            case CouponExpiredException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED);
+            case CouponSuspendedException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_SUSPENDED);
+            case CouponNotYetValidException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_NOT_YET_VALID);
+            case CouponExhaustedException _ -> new Mapping(HttpStatus.CONFLICT, ErrorCode.COUPON_EXHAUSTED);
+        };
+    }
+
+    record Mapping(HttpStatus status, ErrorCode errorCode) {
     }
 }

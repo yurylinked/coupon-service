@@ -6,11 +6,11 @@ import java.util.Optional;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.GeoLocationResolver;
 
-public final class StaticGeoLocationResolver implements GeoLocationResolver {
+final class StaticGeoLocationResolver implements GeoLocationResolver {
 
     private final CountryCode country;
 
-    public StaticGeoLocationResolver(CountryCode country) {
+    StaticGeoLocationResolver(CountryCode country) {
         this.country = Objects.requireNonNull(country, "country");
     }
 

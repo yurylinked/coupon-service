@@ -9,6 +9,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
+import pl.miskiewicz.coupons.coupon.domain.CouponRejectedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot;
 import pl.miskiewicz.coupons.coupon.domain.GeoLocationResolver;
@@ -74,8 +75,8 @@ public class RedeemCouponService {
         RedeemAttempt attempt = bulkhead.execute(code, () -> redeemAtomically(code, userId, country, key));
         return switch (attempt) {
             case RedeemAttempt.Redeemed redeemed -> new RedemptionResult(redeemed.redemption(), false);
-            case RedeemAttempt.AlreadyRedeemed ignored -> alreadyRedeemed(code, userId, key);
-            case RedeemAttempt.NoUseLeft ignored -> throw whyNoUseLeft(code);
+            case RedeemAttempt.AlreadyRedeemed _ -> alreadyRedeemed(code, userId, key);
+            case RedeemAttempt.NoUseLeft _ -> throw whyNoUseLeft(code);
         };
     }
 
@@ -105,7 +106,8 @@ public class RedeemCouponService {
     private RuntimeException whyNoUseLeft(CouponCode code) {
         CouponSnapshot snapshot = coupons.findByCode(code)
                 .orElseThrow(() -> new IllegalStateException("Coupon " + code.value() + " disappeared"));
-        return snapshot.rejection().<RuntimeException>map(rejection -> rejection).orElseGet(RedemptionBusyException::new);
+        Optional<CouponRejectedException> rejection = snapshot.rejection();
+        return rejection.isPresent() ? rejection.get() : new RedemptionBusyException();
     }
 
     private CountryCode resolveCountry(String clientAddress) {

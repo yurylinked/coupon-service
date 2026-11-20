@@ -25,6 +25,7 @@ import pl.miskiewicz.coupons.coupon.domain.LockNotAcquiredException
 import pl.miskiewicz.coupons.coupon.domain.RedeemAttempt
 import pl.miskiewicz.coupons.coupon.domain.Redemption
 import pl.miskiewicz.coupons.coupon.domain.RedemptionCancelledException
+import pl.miskiewicz.coupons.coupon.domain.RedemptionId
 import pl.miskiewicz.coupons.coupon.domain.RedemptionRecord
 import pl.miskiewicz.coupons.coupon.domain.RedemptionStore
 import pl.miskiewicz.coupons.coupon.domain.UserId
@@ -39,13 +40,13 @@ class RedeemCouponServiceSpec extends Specification {
     static final String CLIENT = '203.0.113.7'
     static final IdempotencyKey KEY = new IdempotencyKey('order-2026-11-23-0001')
     static final Redemption REDEMPTION = new Redemption(
-            UUID.fromString('019a9f3e-7c2b-7d41-9a3e-5b6c7d8e9f01'), CODE, USER, PL, NOW.minusSeconds(30))
+            RedemptionId.parse('019a9f3e-7c2b-7d41-9a3e-5b6c7d8e9f01'), CODE, USER, PL, NOW.minusSeconds(30))
 
     CouponRepository coupons = Mock()
     RedemptionStore redemptions = Mock()
     GeoLocationResolver geo = Mock()
     SimpleMeterRegistry meters = new SimpleMeterRegistry()
-    RedemptionBulkhead bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
+    RedemptionBulkhead bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
     RedeemCouponService service = new RedeemCouponService(
             coupons, redemptions, geo, bulkhead, new RedemptionOutcomes(meters))
 

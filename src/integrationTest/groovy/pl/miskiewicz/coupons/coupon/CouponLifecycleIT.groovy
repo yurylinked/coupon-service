@@ -1,7 +1,7 @@
 package pl.miskiewicz.coupons.coupon
 
-import groovy.json.JsonOutput
 import org.springframework.beans.factory.annotation.Autowired
+import org.postgresql.util.PSQLException
 import org.springframework.dao.DataIntegrityViolationException
 import pl.miskiewicz.coupons.IntegrationSpec
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
@@ -18,12 +18,12 @@ class CouponLifecycleIT extends IntegrationSpec {
     def "exposes the start of validity and refuses a redemption before it"() {
         when:
         def created = postJson('/api/v1/coupons',
-                [code: 'ZIMA', maxUses: 5, country: 'PL', validFrom: '2030-12-01T00:00:00+01:00', expiresAt: '2031-01-01T00:00:00Z'])
+                [code: 'ZIMA', maxUses: 5, country: 'PL', validFrom: '2998-12-01T00:00:00+01:00', expiresAt: '2999-01-01T00:00:00Z'])
         def early = redeem('ZIMA', 'user-1')
 
         then:
         created.status() == 201
-        created.body().validFrom == '2030-11-30T23:00:00Z'
+        created.body().validFrom == '2998-11-30T23:00:00Z'
         created.body().active == true
         early.status() == 409
         early.body().errorCode == 'COUPON_NOT_YET_VALID'
@@ -35,10 +35,10 @@ class CouponLifecycleIT extends IntegrationSpec {
         createCoupon('LEAKED', 5)
 
         when:
-        def suspended = patchStatus('leaked', false)
-        def suspendedAgain = patchStatus('LEAKED', false)
+        def suspended = setActive('leaked', false)
+        def suspendedAgain = setActive('LEAKED', false)
         def refused = redeem('LEAKED', 'user-1')
-        def resumed = patchStatus('LEAKED', true)
+        def resumed = setActive('LEAKED', true)
         def redeemed = redeem('LEAKED', 'user-1')
 
         then:
@@ -67,7 +67,7 @@ class CouponLifecycleIT extends IntegrationSpec {
 
         where:
         description           | code      | body                 || status | errorCode
-        'without the flag'    | 'LEAKED'  | '{}'                 || 400    | 'VALIDATION_FAILED'
+        'without the flag'    | 'LEAKED'  | '{}'                 || 400    | 'INVALID_ACTIVE_FLAG'
         'with a non-boolean'  | 'LEAKED'  | '{"active":"maybe"}' || 400    | 'MALFORMED_REQUEST'
         'for an unknown code' | 'UNKNOWN' | '{"active":false}'   || 404    | 'COUPON_NOT_FOUND'
     }
@@ -83,7 +83,7 @@ class CouponLifecycleIT extends IntegrationSpec {
         then:
         attempt instanceof RedeemAttempt.NoUseLeft
         currentUses('ZIMA') == 0
-        usageRows('ZIMA') == 0
+        redemptionRows('ZIMA') == 0
 
         where:
         state           | sql
@@ -91,34 +91,31 @@ class CouponLifecycleIT extends IntegrationSpec {
         'not yet valid' | "UPDATE coupon SET valid_from = now() + interval '1 day' WHERE code = :code"
     }
 
-    def "the database refuses #description"() {
+    def "the database refuses #description through #constraint"() {
         given:
-        postJson('/api/v1/coupons', [code: 'ZIMA', maxUses: 5, country: 'PL', expiresAt: '2031-01-01T00:00:00Z'])
+        postJson('/api/v1/coupons', [code: 'ZIMA', maxUses: 5, country: 'PL', expiresAt: '2999-01-01T00:00:00Z'])
         redeem('ZIMA', 'user-1')
 
         when:
         jdbcClient.sql(sql).param('code', 'ZIMA').update()
 
         then:
-        thrown(DataIntegrityViolationException)
+        def ex = thrown(DataIntegrityViolationException)
+        (ex.mostSpecificCause as PSQLException).serverErrorMessage.constraint == constraint
 
         where:
-        description                                     | sql
-        'a validity window that does not start earlier' | 'UPDATE coupon SET valid_from = expires_at WHERE code = :code'
-        'more uses than the limit'                      | 'UPDATE coupon SET current_uses = max_uses + 1 WHERE code = :code'
-        'a negative use count'                          | 'UPDATE coupon SET current_uses = -1 WHERE code = :code'
-        'a use limit of zero'                           | 'UPDATE coupon SET max_uses = 0, current_uses = 0 WHERE code = :code'
-        'a use limit above the cap'                     | 'UPDATE coupon SET max_uses = 1000001 WHERE code = :code'
-        'a lowercase code'                              | "UPDATE coupon SET code = 'zima' WHERE code = :code"
-        'a lowercase coupon country'                    | "UPDATE coupon SET country_code = 'pl' WHERE code = :code"
-        'an expiry before creation'                     | "UPDATE coupon SET expires_at = created_at - interval '1 second' WHERE code = :code"
-        'a cancellation before the use'                 | "UPDATE coupon_usage SET cancelled_at = used_at - interval '1 microsecond' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
-        'a lowercase redemption country'                | "UPDATE coupon_usage SET country_code = 'pl' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
-        'an idempotency key with a space'               | "UPDATE coupon_usage SET idempotency_key = 'a b' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
-        'an empty user id'                              | "UPDATE coupon_usage SET user_id = '' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
-    }
-
-    private patchStatus(String code, boolean active) {
-        request('PATCH', "/api/v1/coupons/${code}", JsonOutput.toJson([active: active]), 'application/json')
+        description                                     | constraint                                  | sql
+        'a validity window that does not start earlier' | 'ck_coupon_valid_from_before_expiry'        | 'UPDATE coupon SET valid_from = expires_at WHERE code = :code'
+        'more uses than the limit'                      | 'ck_coupon_current_uses'                    | 'UPDATE coupon SET current_uses = max_uses + 1 WHERE code = :code'
+        'a negative use count'                          | 'ck_coupon_current_uses'                    | 'UPDATE coupon SET current_uses = -1 WHERE code = :code'
+        'a use limit of zero'                           | 'ck_coupon_max_uses'                        | 'UPDATE coupon SET max_uses = 0, current_uses = 0 WHERE code = :code'
+        'a use limit above the cap'                     | 'ck_coupon_max_uses'                        | 'UPDATE coupon SET max_uses = 1000001 WHERE code = :code'
+        'a lowercase code'                              | 'ck_coupon_code_format'                     | "UPDATE coupon SET code = 'zima' WHERE code = :code"
+        'a lowercase coupon country'                    | 'ck_coupon_country_format'                  | "UPDATE coupon SET country_code = 'pl' WHERE code = :code"
+        'an expiry before creation'                     | 'ck_coupon_expires_after_creation'          | "UPDATE coupon SET expires_at = created_at - interval '1 second' WHERE code = :code"
+        'a cancellation before the redemption'          | 'ck_redemption_cancelled_after_redeemed'    | "UPDATE redemption SET cancelled_at = redeemed_at - interval '1 microsecond' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'a lowercase redemption country'                | 'ck_redemption_country_format'              | "UPDATE redemption SET country_code = 'pl' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'an idempotency key with a space'               | 'ck_redemption_idempotency_key'             | "UPDATE redemption SET idempotency_key = 'a b' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'an empty user id'                              | 'ck_redemption_user_id'                     | "UPDATE redemption SET user_id = '' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
     }
 }

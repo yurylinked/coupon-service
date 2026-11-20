@@ -4,7 +4,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import pl.miskiewicz.coupons.coupon.application.CreateCouponCommand;
 
-// Every field is validated by the domain, so each has exactly one error code.
+// No Bean Validation: the domain rejects each field with its own errorCode.
 record CreateCouponRequest(
         String code,
         Integer maxUses,

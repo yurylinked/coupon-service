@@ -7,7 +7,7 @@ class RetryAfterSpec extends Specification {
 
     def "spreads delays over every whole second of the window and nothing outside it"() {
         given:
-        def retryAfter = new RetryAfter(Duration.ofSeconds(1), Duration.ofSeconds(3))
+        def retryAfter = new RetryAfter(new RetryAfterProperties(Duration.ofSeconds(1), Duration.ofSeconds(3)))
 
         when:
         def drawn = (1..1_000).collect { retryAfter.seconds() } as Set
@@ -18,12 +18,12 @@ class RetryAfterSpec extends Specification {
 
     def "a window of one second always gives that second"() {
         expect:
-        new RetryAfter(Duration.ofSeconds(2), Duration.ofSeconds(2)).seconds() == '2'
+        new RetryAfter(new RetryAfterProperties(Duration.ofSeconds(2), Duration.ofSeconds(2))).seconds() == '2'
     }
 
     def "rejects a window from #min to #max"() {
         when:
-        new RetryAfter(min, max)
+        new RetryAfterProperties(min, max)
 
         then:
         thrown(IllegalArgumentException)

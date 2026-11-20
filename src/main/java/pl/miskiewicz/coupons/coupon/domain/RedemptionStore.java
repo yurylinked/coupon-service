@@ -1,13 +1,13 @@
 package pl.miskiewicz.coupons.coupon.domain;
 
 import java.util.Optional;
+import org.jspecify.annotations.Nullable;
 
 public interface RedemptionStore {
 
     boolean hasRedeemed(CouponCode code, UserId userId);
 
-    // key is null when the client sent no Idempotency-Key.
-    RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, IdempotencyKey key);
+    RedeemAttempt redeem(CouponCode code, UserId userId, CountryCode country, @Nullable IdempotencyKey key);
 
     Optional<RedemptionRecord> findById(RedemptionId redemptionId);
 

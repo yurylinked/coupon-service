@@ -17,6 +17,7 @@ import pl.miskiewicz.coupons.coupon.domain.DomainException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException;
@@ -30,8 +31,8 @@ import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
 @Component
 public class RedemptionOutcomes {
 
-    static final String REDEMPTIONS = "coupon.redemptions";
-    static final String CANCELLATIONS = "coupon.cancellations";
+    private static final String REDEMPTIONS = "coupon.redemptions";
+    private static final String CANCELLATIONS = "coupon.cancellations";
     private static final Logger LOG = LoggerFactory.getLogger(RedemptionOutcomes.class);
 
     private final MeterRegistry registry;
@@ -47,7 +48,7 @@ public class RedemptionOutcomes {
                 .addKeyValue("event", "coupon.redemption")
                 .addKeyValue("outcome", outcome)
                 .addKeyValue("couponCode", result.redemption().code().value())
-                .addKeyValue("redemptionId", result.redemption().id())
+                .addKeyValue("redemptionId", result.redemption().id().value())
                 .addKeyValue("country", result.redemption().country().value())
                 .log("Coupon redeemed");
     }
@@ -72,32 +73,33 @@ public class RedemptionOutcomes {
     static String outcomeOf(RuntimeException reason) {
         return switch (reason) {
             case DomainException domain -> outcomeOf(domain);
-            case RedemptionBusyException ignored -> "busy";
+            case RedemptionBusyException _ -> "busy";
             default -> "error";
         };
     }
 
     private static String outcomeOf(DomainException reason) {
         return switch (reason) {
-            case InvalidUserIdException ignored -> "invalid_user";
-            case InvalidIdempotencyKeyException ignored -> "invalid_idempotency_key";
-            case InvalidMaxUsesException ignored -> "invalid_max_uses";
-            case InvalidCouponCodeException ignored -> "invalid_code";
-            case InvalidRedemptionIdException ignored -> "invalid_redemption_id";
-            case InvalidCountryCodeException ignored -> "invalid_country";
-            case InvalidExpiryException ignored -> "invalid_expiry";
-            case InvalidValidityPeriodException ignored -> "invalid_validity_period";
-            case CouponNotFoundException ignored -> "not_found";
-            case RedemptionNotFoundException ignored -> "redemption_not_found";
-            case CouponAlreadyExistsException ignored -> "already_exists";
-            case CountryUnresolvedException ignored -> "country_unresolved";
-            case CouponCountryNotAllowedException ignored -> "country_not_allowed";
-            case CouponAlreadyUsedByUserException ignored -> "already_used";
-            case RedemptionCancelledException ignored -> "redemption_cancelled";
-            case CouponExpiredException ignored -> "expired";
-            case CouponSuspendedException ignored -> "suspended";
-            case CouponNotYetValidException ignored -> "not_yet_valid";
-            case CouponExhaustedException ignored -> "exhausted";
+            case InvalidUserIdException _ -> "invalid_user";
+            case InvalidIdempotencyKeyException _ -> "invalid_idempotency_key";
+            case InvalidActiveFlagException _ -> "invalid_active_flag";
+            case InvalidMaxUsesException _ -> "invalid_max_uses";
+            case InvalidCouponCodeException _ -> "invalid_code";
+            case InvalidRedemptionIdException _ -> "invalid_redemption_id";
+            case InvalidCountryCodeException _ -> "invalid_country";
+            case InvalidExpiryException _ -> "invalid_expiry";
+            case InvalidValidityPeriodException _ -> "invalid_validity_period";
+            case CouponNotFoundException _ -> "not_found";
+            case RedemptionNotFoundException _ -> "redemption_not_found";
+            case CouponAlreadyExistsException _ -> "already_exists";
+            case CountryUnresolvedException _ -> "country_unresolved";
+            case CouponCountryNotAllowedException _ -> "country_not_allowed";
+            case CouponAlreadyUsedByUserException _ -> "already_used";
+            case RedemptionCancelledException _ -> "redemption_cancelled";
+            case CouponExpiredException _ -> "expired";
+            case CouponSuspendedException _ -> "suspended";
+            case CouponNotYetValidException _ -> "not_yet_valid";
+            case CouponExhaustedException _ -> "exhausted";
         };
     }
 

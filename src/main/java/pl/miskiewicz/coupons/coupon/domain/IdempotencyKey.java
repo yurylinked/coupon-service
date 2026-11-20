@@ -4,7 +4,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-// Chosen by the client, typically its order id, and compared exactly.
+// Not normalised, unlike UserId and CouponCode: the client's key, typically an order id, is compared as sent.
 public record IdempotencyKey(String value) {
 
     private static final Pattern FORMAT = Pattern.compile("[A-Za-z0-9._:-]{1,64}");

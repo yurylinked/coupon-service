@@ -40,7 +40,7 @@ class RedemptionController {
         RedemptionResult result =
                 redeemCouponService.redeem(request.toCommand(httpRequest.getRemoteAddr(), idempotencyKey));
         ResponseEntity.BodyBuilder response = ResponseEntity
-                .created(URI.create("/api/v1/redemptions/" + result.redemption().id()));
+                .created(URI.create("/api/v1/redemptions/" + result.redemption().id().value()));
         if (result.replayed()) {
             response.header(IDEMPOTENT_REPLAYED, "true");
         }

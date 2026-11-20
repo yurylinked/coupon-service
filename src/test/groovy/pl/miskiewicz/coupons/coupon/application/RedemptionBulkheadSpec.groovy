@@ -1,24 +1,19 @@
 package pl.miskiewicz.coupons.coupon.application
 
 import java.time.Duration
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
-import pl.miskiewicz.coupons.coupon.application.RedemptionBusyException
-import spock.lang.AutoCleanup
 import spock.lang.Specification
+import spock.lang.Timeout
 
 class RedemptionBulkheadSpec extends Specification {
 
     static final CouponCode HOT = new CouponCode('HOT')
 
-    @AutoCleanup('close')
-    def executor = Executors.newVirtualThreadPerTaskExecutor()
-
     def "runs the action and returns its result"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
 
         expect:
         bulkhead.execute(HOT) { 'done' } == 'done'
@@ -27,8 +22,8 @@ class RedemptionBulkheadSpec extends Specification {
 
     def "rejects a call when all permits of the coupon are taken for longer than the wait limit"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 64, Duration.ofMillis(50))
-        def release = holdPermit(bulkhead, HOT)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 64, Duration.ofMillis(50)))
+        def held = new HeldPermit(bulkhead, HOT)
 
         when:
         bulkhead.execute(HOT) { 'second' }
@@ -37,26 +32,26 @@ class RedemptionBulkheadSpec extends Specification {
         thrown(RedemptionBusyException)
 
         cleanup:
-        release.countDown()
+        held.close()
     }
 
     def "lets a coupon in another stripe through while a hot coupon is saturated"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 64, Duration.ZERO)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 64, Duration.ZERO))
         def cold = (1..1000).collect { new CouponCode("COLD-$it") }
                 .find { bulkhead.stripeIndex(it) != bulkhead.stripeIndex(HOT) }
-        def release = holdPermit(bulkhead, HOT)
+        def held = new HeldPermit(bulkhead, HOT)
 
         expect:
         bulkhead.execute(cold) { 'cold' } == 'cold'
 
         cleanup:
-        release.countDown()
+        held.close()
     }
 
     def "returns the permit when the action fails"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
 
         when:
         bulkhead.execute(HOT) { throw new IllegalStateException('boom') }
@@ -68,8 +63,8 @@ class RedemptionBulkheadSpec extends Specification {
 
     def "a refused call gives back no permit it never held"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ZERO)
-        def release = holdPermit(bulkhead, HOT)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
+        def held = new HeldPermit(bulkhead, HOT)
 
         when:
         def outcomes = (1..2).collect {
@@ -84,26 +79,29 @@ class RedemptionBulkheadSpec extends Specification {
         outcomes == ['refused', 'refused']
 
         cleanup:
-        release.countDown()
+        held.close()
     }
 
     def "waits for a permit freed within the wait limit instead of refusing at once"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ofSeconds(5))
-        def release = holdPermit(bulkhead, HOT)
-        executor.submit({
-            Thread.sleep(100)
-            release.countDown()
-        } as Runnable)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ofSeconds(5)))
+        def held = new HeldPermit(bulkhead, HOT)
+        def result = new CompletableFuture<String>()
+        def waiter = Thread.ofVirtual().start { result.complete(bulkhead.execute(HOT) { 'after the wait' }) }
 
-        expect:
-        bulkhead.execute(HOT) { 'after the wait' } == 'after the wait'
+        when: 'the second caller is parked on the semaphore, then the permit comes back'
+        awaitState(waiter, Thread.State.TIMED_WAITING)
+        held.close()
+
+        then:
+        result.get(5, TimeUnit.SECONDS) == 'after the wait'
     }
 
-    def "an interrupted caller is refused and keeps its interrupt flag"() {
+    @Timeout(5)
+    def "an interrupted caller is refused at once and keeps its interrupt flag"() {
         given:
-        def bulkhead = new RedemptionBulkhead(1, 1, Duration.ofSeconds(5))
-        def release = holdPermit(bulkhead, HOT)
+        def bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ofSeconds(5)))
+        def held = new HeldPermit(bulkhead, HOT)
         Thread.currentThread().interrupt()
 
         when:
@@ -111,36 +109,18 @@ class RedemptionBulkheadSpec extends Specification {
 
         then:
         thrown(RedemptionBusyException)
-        Thread.interrupted()
+        Thread.currentThread().isInterrupted()
 
         cleanup:
-        release.countDown()
+        Thread.interrupted()
+        held.close()
     }
 
-    def "rejects invalid configuration: permits=#permits, stripes=#stripes, wait=#wait"() {
-        when:
-        new RedemptionBulkhead(permits, stripes, wait)
-
-        then:
-        thrown(IllegalArgumentException)
-
-        where:
-        permits | stripes | wait
-        0       | 64      | Duration.ofMillis(200)
-        4       | 0       | Duration.ofMillis(200)
-        4       | 64      | Duration.ofMillis(-1)
-    }
-
-    private CountDownLatch holdPermit(RedemptionBulkhead bulkhead, CouponCode code) {
-        def acquired = new CountDownLatch(1)
-        def release = new CountDownLatch(1)
-        executor.submit({
-            bulkhead.execute(code) {
-                acquired.countDown()
-                release.await()
-            }
-        } as Runnable)
-        assert acquired.await(5, TimeUnit.SECONDS)
-        release
+    private static void awaitState(Thread thread, Thread.State state) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (thread.state != state) {
+            assert System.nanoTime() < deadline: "thread never reached $state, last seen ${thread.state}"
+            Thread.sleep(5)
+        }
     }
 }

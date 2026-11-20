@@ -3,31 +3,28 @@ package pl.miskiewicz.coupons
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import org.springframework.beans.factory.annotation.Value
-import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 
-@AutoConfigureMetrics
 class ObservabilityIT extends IntegrationSpec {
 
     @Value('${local.management.port}')
     int managementPort
 
     def "exposes redemption outcomes and request latency histograms to Prometheus"() {
-        given:
+        given: 'the registry is shared by every integration spec, so only the change is asserted'
         createCoupon('METRICS', 1)
-        redeem('METRICS', 'user-1')
-        redeem('METRICS', 'user-2')
+        def before = scrape()
 
         when:
-        def scrape = http.send(
-                HttpRequest.newBuilder(URI.create("http://localhost:${managementPort}/actuator/prometheus")).GET().build(),
-                HttpResponse.BodyHandlers.ofString())
+        redeem('METRICS', 'user-1')
+        redeem('METRICS', 'user-2')
+        def after = scrape()
 
         then:
-        scrape.statusCode() == 200
-        counterLine(scrape.body(), 'success').endsWith(' 1.0')
-        counterLine(scrape.body(), 'exhausted').endsWith(' 1.0')
-        scrape.body().contains('http_server_requests_seconds_bucket')
-        !scrape.body().contains('METRICS')
+        after.statusCode() == 200
+        counter(after.body(), 'success') - counter(before.body(), 'success') == 1
+        counter(after.body(), 'exhausted') - counter(before.body(), 'exhausted') == 1
+        after.body().contains('http_server_requests_seconds_bucket')
+        !after.body().contains('METRICS')
     }
 
     def "keeps actuator endpoints off the public port"() {
@@ -35,7 +32,13 @@ class ObservabilityIT extends IntegrationSpec {
         get('/actuator/prometheus').status() == 404
     }
 
-    private static String counterLine(String scrape, String outcome) {
-        scrape.readLines().find { it.startsWith('coupon_redemptions_total{') && it.contains("outcome=\"$outcome\"") }
+    private HttpResponse<String> scrape() {
+        http.send(HttpRequest.newBuilder(URI.create("http://localhost:${managementPort}/actuator/prometheus")).GET().build(),
+                HttpResponse.BodyHandlers.ofString())
+    }
+
+    private static double counter(String scrape, String outcome) {
+        def line = scrape.readLines().find { it.startsWith('coupon_redemptions_total{') && it.contains("outcome=\"$outcome\"") }
+        line == null ? 0 : line.tokenize(' ').last() as double
     }
 }

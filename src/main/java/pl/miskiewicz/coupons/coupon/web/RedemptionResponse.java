@@ -14,7 +14,7 @@ record RedemptionResponse(UUID redemptionId, String code, String userId, Instant
     static RedemptionResponse from(RedemptionRecord record) {
         Redemption redemption = record.redemption();
         return new RedemptionResponse(
-                redemption.id(),
+                redemption.id().value(),
                 redemption.code().value(),
                 redemption.userId().value(),
                 redemption.redeemedAt(),

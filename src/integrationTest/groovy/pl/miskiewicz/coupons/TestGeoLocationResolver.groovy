@@ -47,7 +47,7 @@ class TestGeoLocationResolver implements GeoLocationResolver {
 
         private void hold() {
             entered.countDown()
-            released.await(10, TimeUnit.SECONDS)
+            assert released.await(10, TimeUnit.SECONDS)
         }
     }
 }

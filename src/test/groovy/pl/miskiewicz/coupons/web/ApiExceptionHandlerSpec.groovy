@@ -27,6 +27,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException
+import pl.miskiewicz.coupons.coupon.domain.InvalidActiveFlagException
 import pl.miskiewicz.coupons.coupon.domain.InvalidIdempotencyKeyException
 import pl.miskiewicz.coupons.coupon.domain.InvalidMaxUsesException
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException
@@ -39,7 +40,7 @@ import spock.lang.Specification
 class ApiExceptionHandlerSpec extends Specification {
 
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
-            .setControllerAdvice(new ApiExceptionHandler(new RetryAfter(Duration.ofSeconds(2), Duration.ofSeconds(2))))
+            .setControllerAdvice(new ApiExceptionHandler(new RetryAfter(new RetryAfterProperties(Duration.ofSeconds(2), Duration.ofSeconds(2)))))
             .build()
 
     def "maps #failure to #status #errorCode"() {
@@ -75,6 +76,7 @@ class ApiExceptionHandlerSpec extends Specification {
         new InvalidUserIdException()             || 400    | 'INVALID_USER_ID'
         new InvalidIdempotencyKeyException()     || 400    | 'INVALID_IDEMPOTENCY_KEY'
         new InvalidMaxUsesException()            || 400    | 'INVALID_MAX_USES'
+        new InvalidActiveFlagException()         || 400    | 'INVALID_ACTIVE_FLAG'
         new InvalidRedemptionIdException()       || 400    | 'INVALID_REDEMPTION_ID'
         new InvalidExpiryException()             || 400    | 'INVALID_EXPIRY'
         new InvalidValidityPeriodException()     || 400    | 'INVALID_VALIDITY_PERIOD'

@@ -16,12 +16,14 @@ final class Timestamps {
     }
 
     static Instant instant(ResultSet rs, String column) throws SQLException {
-        OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
-        return value == null ? null : value.toInstant();
+        return toInstant(rs.getObject(column, OffsetDateTime.class));
     }
 
     static Instant instant(ResultSet rs, int column) throws SQLException {
-        OffsetDateTime value = rs.getObject(column, OffsetDateTime.class);
+        return toInstant(rs.getObject(column, OffsetDateTime.class));
+    }
+
+    private static Instant toInstant(OffsetDateTime value) {
         return value == null ? null : value.toInstant();
     }
 }

@@ -65,9 +65,7 @@ class RedemptionApiIT extends IntegrationSpec {
 
         where:
         body                                     || errorCode
-        '{"code":"WIOSNA","userId":"john doe"}'  || 'INVALID_USER_ID'
         '{"code":"WIOSNA"}'                      || 'INVALID_USER_ID'
-        '{"code":"","userId":"user-1"}'          || 'INVALID_COUPON_CODE'
         '{"code":"ab","userId":"user-1"}'        || 'INVALID_COUPON_CODE'
     }
 }

@@ -11,13 +11,13 @@ import org.slf4j.LoggerFactory;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.GeoLocationResolver;
 
-public final class DbIpGeoLocationResolver implements GeoLocationResolver, AutoCloseable {
+final class DbIpGeoLocationResolver implements GeoLocationResolver, AutoCloseable {
 
     private static final Logger LOG = LoggerFactory.getLogger(DbIpGeoLocationResolver.class);
 
     private final DatabaseReader reader;
 
-    public DbIpGeoLocationResolver(Path database) throws IOException {
+    DbIpGeoLocationResolver(Path database) throws IOException {
         this.reader = new DatabaseReader.Builder(database.toFile()).build();
     }
 
