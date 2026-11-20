@@ -2,6 +2,7 @@ package pl.miskiewicz.coupons.coupon.application;
 
 import java.net.InetAddress;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Optional;
 import org.springframework.stereotype.Service;
@@ -10,6 +11,7 @@ import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
+import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
@@ -55,11 +57,14 @@ public class RedeemCouponService {
         if (redemptions.hasRedeemed(coupon.code(), userId)) {
             throw new CouponAlreadyUsedByUserException();
         }
+        Instant now = clock.instant().truncatedTo(ChronoUnit.MICROS);
+        if (coupon.isExpiredAt(now)) {
+            throw new CouponExpiredException();
+        }
         if (coupon.isExhausted()) {
             throw new CouponExhaustedException();
         }
-        return bulkhead.execute(coupon.code(), () -> redemptions.redeem(
-                coupon.code(), userId, requestCountry, clock.instant().truncatedTo(ChronoUnit.MICROS)));
+        return bulkhead.execute(coupon.code(), () -> redemptions.redeem(coupon.code(), userId, requestCountry, now));
     }
 
     private static Optional<InetAddress> parseAddress(String clientAddress) {

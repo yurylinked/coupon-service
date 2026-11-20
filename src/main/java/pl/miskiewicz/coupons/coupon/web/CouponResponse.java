@@ -3,7 +3,8 @@ package pl.miskiewicz.coupons.coupon.web;
 import java.time.Instant;
 import pl.miskiewicz.coupons.coupon.domain.Coupon;
 
-record CouponResponse(String code, String country, int maxUses, int currentUses, Instant createdAt) {
+record CouponResponse(
+        String code, String country, int maxUses, int currentUses, Instant createdAt, Instant expiresAt) {
 
     static CouponResponse from(Coupon coupon) {
         return new CouponResponse(
@@ -11,6 +12,7 @@ record CouponResponse(String code, String country, int maxUses, int currentUses,
                 coupon.country().value(),
                 coupon.maxUses(),
                 coupon.currentUses(),
-                coupon.createdAt());
+                coupon.createdAt(),
+                coupon.expiresAt());
     }
 }

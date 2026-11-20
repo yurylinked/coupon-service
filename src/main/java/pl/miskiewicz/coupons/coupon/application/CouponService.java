@@ -26,7 +26,8 @@ public class CouponService {
                 CouponCode.parse(command.code()),
                 CountryCode.parse(command.country()),
                 command.maxUses(),
-                clock.instant().truncatedTo(ChronoUnit.MICROS));
+                clock.instant().truncatedTo(ChronoUnit.MICROS),
+                command.expiresAt() == null ? null : command.expiresAt().truncatedTo(ChronoUnit.MICROS));
         if (!coupons.insertIfAbsent(coupon)) {
             throw new CouponAlreadyExistsException();
         }
