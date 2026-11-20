@@ -38,7 +38,14 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - run: docker compose up --build --detach --wait --wait-timeout 300
+      - name: start postgres, two app replicas and nginx
+        run: |
+          for attempt in 1 2 3; do
+            docker compose up --build --detach --wait --wait-timeout 300 && exit 0
+            echo "compose up failed (attempt $attempt), registry rate limits are the usual cause, retrying"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - run: ./scripts/prove.sh
       - if: failure()
         run: docker compose logs
