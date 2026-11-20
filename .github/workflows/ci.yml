@@ -25,6 +25,14 @@ jobs:
           distribution: temurin
           java-version: '25'
       - uses: gradle/actions/setup-gradle@v6
+      - name: pull the Testcontainers PostgreSQL image
+        run: |
+          for attempt in 1 2 3; do
+            docker pull public.ecr.aws/docker/library/postgres:18-alpine && exit 0
+            echo "image pull failed (attempt $attempt), registry rate limits are the usual cause, retrying"
+            sleep $((attempt * 20))
+          done
+          exit 1
       - run: ./gradlew check --console=plain
       - if: failure()
         uses: actions/upload-artifact@v7

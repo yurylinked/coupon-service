@@ -50,6 +50,7 @@ testing {
                 implementation(project())
                 implementation("org.springframework.boot:spring-boot-starter-test")
                 implementation("org.springframework.boot:spring-boot-testcontainers")
+                implementation("org.springframework.boot:spring-boot-micrometer-metrics-test")
                 implementation("org.testcontainers:testcontainers-postgresql")
                 implementation(libs.spock.spring)
                 implementation("org.apache.groovy:groovy-json")

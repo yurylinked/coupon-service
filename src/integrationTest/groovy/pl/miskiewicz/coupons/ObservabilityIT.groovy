@@ -3,7 +3,9 @@ package pl.miskiewicz.coupons
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.micrometer.metrics.test.autoconfigure.AutoConfigureMetrics
 
+@AutoConfigureMetrics
 class ObservabilityIT extends IntegrationSpec {
 
     @Value('${local.management.port}')
