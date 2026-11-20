@@ -9,7 +9,9 @@ import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
+import pl.miskiewicz.coupons.coupon.domain.CouponNotYetActiveException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
+import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
@@ -60,6 +62,8 @@ public class RedemptionOutcomes {
             case CouponCountryNotAllowedException ignored -> "country_not_allowed";
             case CouponAlreadyUsedByUserException ignored -> "already_used";
             case CouponExpiredException ignored -> "expired";
+            case CouponSuspendedException ignored -> "suspended";
+            case CouponNotYetActiveException ignored -> "not_yet_active";
             case CouponExhaustedException ignored -> "exhausted";
             case RedemptionBusyException ignored -> "busy";
             default -> "error";

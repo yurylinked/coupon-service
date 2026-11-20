@@ -4,7 +4,14 @@ import java.time.Instant;
 import pl.miskiewicz.coupons.coupon.domain.Coupon;
 
 record CouponResponse(
-        String code, String country, int maxUses, int currentUses, Instant createdAt, Instant expiresAt) {
+        String code,
+        String country,
+        int maxUses,
+        int currentUses,
+        Instant createdAt,
+        Instant validFrom,
+        Instant expiresAt,
+        boolean active) {
 
     static CouponResponse from(Coupon coupon) {
         return new CouponResponse(
@@ -13,6 +20,8 @@ record CouponResponse(
                 coupon.maxUses(),
                 coupon.currentUses(),
                 coupon.createdAt(),
-                coupon.expiresAt());
+                coupon.validFrom(),
+                coupon.expiresAt(),
+                coupon.active());
     }
 }

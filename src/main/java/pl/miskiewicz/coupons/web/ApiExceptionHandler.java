@@ -24,11 +24,14 @@ import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
 import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException;
+import pl.miskiewicz.coupons.coupon.domain.CouponNotYetActiveException;
+import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException;
 import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCountryCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidCouponCodeException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidExpiryException;
 import pl.miskiewicz.coupons.coupon.domain.InvalidUserIdException;
+import pl.miskiewicz.coupons.coupon.domain.InvalidValidityPeriodException;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
 
 @RestControllerAdvice
@@ -64,6 +67,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_EXPIRY, ex.getMessage());
     }
 
+    @ExceptionHandler(InvalidValidityPeriodException.class)
+    ProblemDetail invalidValidityPeriod(InvalidValidityPeriodException ex) {
+        return problem(HttpStatus.BAD_REQUEST, ErrorCode.INVALID_VALIDITY_PERIOD, ex.getMessage());
+    }
+
     @ExceptionHandler(CouponAlreadyExistsException.class)
     ProblemDetail couponAlreadyExists(CouponAlreadyExistsException ex) {
         return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_CODE_ALREADY_EXISTS, ex.getMessage());
@@ -92,6 +100,16 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(CouponExpiredException.class)
     ProblemDetail couponExpired(CouponExpiredException ex) {
         return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_EXPIRED, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponSuspendedException.class)
+    ProblemDetail couponSuspended(CouponSuspendedException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_SUSPENDED, ex.getMessage());
+    }
+
+    @ExceptionHandler(CouponNotYetActiveException.class)
+    ProblemDetail couponNotYetActive(CouponNotYetActiveException ex) {
+        return problem(HttpStatus.CONFLICT, ErrorCode.COUPON_NOT_YET_ACTIVE, ex.getMessage());
     }
 
     @ExceptionHandler(CouponExhaustedException.class)

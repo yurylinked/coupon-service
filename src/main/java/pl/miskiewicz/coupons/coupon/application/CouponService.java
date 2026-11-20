@@ -1,6 +1,7 @@
 package pl.miskiewicz.coupons.coupon.application;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
 import pl.miskiewicz.coupons.coupon.domain.Coupon;
@@ -27,7 +28,8 @@ public class CouponService {
                 CountryCode.parse(command.country()),
                 command.maxUses(),
                 clock.instant().truncatedTo(ChronoUnit.MICROS),
-                command.expiresAt() == null ? null : command.expiresAt().truncatedTo(ChronoUnit.MICROS));
+                toMicros(command.validFrom()),
+                toMicros(command.expiresAt()));
         if (!coupons.insertIfAbsent(coupon)) {
             throw new CouponAlreadyExistsException();
         }
@@ -38,5 +40,17 @@ public class CouponService {
         return CouponCode.tryParse(rawCode)
                 .flatMap(coupons::findByCode)
                 .orElseThrow(CouponNotFoundException::new);
+    }
+
+    // Suspending stops new redemptions at once (the redemption UPDATE checks the flag); redemptions committed before
+    // stay valid. Setting the current value again is a no-op, so operators can safely repeat the call.
+    public Coupon setActive(String rawCode, boolean active) {
+        return CouponCode.tryParse(rawCode)
+                .flatMap(code -> coupons.updateActive(code, active))
+                .orElseThrow(CouponNotFoundException::new);
+    }
+
+    private static Instant toMicros(Instant instant) {
+        return instant == null ? null : instant.truncatedTo(ChronoUnit.MICROS);
     }
 }

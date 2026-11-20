@@ -14,8 +14,7 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import pl.miskiewicz.coupons.coupon.domain.CouponAlreadyUsedByUserException;
 import pl.miskiewicz.coupons.coupon.domain.CouponCode;
-import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException;
-import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
+import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
 import pl.miskiewicz.coupons.coupon.domain.CountryCode;
 import pl.miskiewicz.coupons.coupon.domain.Redemption;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionBusyException;
@@ -28,10 +27,16 @@ class JdbcRedemptionStore implements RedemptionStore {
     private static final String LOCK_NOT_AVAILABLE = "55P03";
 
     private final JdbcClient jdbc;
+    private final CouponRepository coupons;
     private final String setLockTimeout;
 
-    JdbcRedemptionStore(JdbcClient jdbc, @Value("${coupons.redemption.lock-timeout:2s}") Duration lockTimeout) {
+    JdbcRedemptionStore(
+            JdbcClient jdbc,
+            CouponRepository coupons,
+            @Value("${coupons.redemption.lock-timeout:2s}") Duration lockTimeout) {
         this.jdbc = jdbc;
+        this.coupons = coupons;
+        // SET does not accept bind parameters; the value is a Duration from configuration, never request input.
         this.setLockTimeout = "SET LOCAL lock_timeout = '" + lockTimeout.toMillis() + "ms'";
     }
 
@@ -60,7 +65,9 @@ class JdbcRedemptionStore implements RedemptionStore {
                             UPDATE coupon
                             SET current_uses = current_uses + 1
                             WHERE code = :code
+                              AND active
                               AND current_uses < max_uses
+                              AND (valid_from IS NULL OR valid_from <= :now)
                               AND (expires_at IS NULL OR expires_at > :now)
                             RETURNING id
                             """)
@@ -91,23 +98,18 @@ class JdbcRedemptionStore implements RedemptionStore {
         }
     }
 
-    // A blocked UPDATE re-checks the row after the winner commits and may find no use left. Under READ COMMITTED
-    // this next statement sees the winner's committed usage row, so the same user is told they already used it.
-    // Expiry uses the same instant as the UPDATE (the app clock), so both statements agree on what "now" is.
+    // A blocked UPDATE re-checks the row after the winner commits and may find nothing to update. Under READ COMMITTED
+    // the next statements see what the winner committed, so the same user is told they already used the coupon and
+    // anyone else gets the coupon's own reason, decided by the same domain rule as the pre-check and at the same
+    // instant as the UPDATE. If no rule rejects any more, the state changed in between (for example the coupon was
+    // reactivated) and the client is asked to retry instead of being given a reason that is no longer true.
     private RuntimeException noUseLeft(CouponCode code, UserId userId, Instant now) {
         if (hasRedeemed(code, userId)) {
             return new CouponAlreadyUsedByUserException();
         }
-        boolean expired = jdbc.sql("""
-                        SELECT expires_at IS NOT NULL AND expires_at <= :now
-                        FROM coupon
-                        WHERE code = :code
-                        """)
-                .param("now", OffsetDateTime.ofInstant(now, ZoneOffset.UTC))
-                .param("code", code.value())
-                .query(Boolean.class)
-                .single();
-        return expired ? new CouponExpiredException() : new CouponExhaustedException();
+        return coupons.findByCode(code)
+                .flatMap(coupon -> coupon.rejectionAt(now))
+                .orElseGet(RedemptionBusyException::new);
     }
 
     private static boolean isLockTimeout(DataAccessException ex) {

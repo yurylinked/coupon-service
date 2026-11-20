@@ -12,6 +12,8 @@ import pl.miskiewicz.coupons.coupon.domain.CouponCountryNotAllowedException
 import pl.miskiewicz.coupons.coupon.domain.CouponExhaustedException
 import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException
 import pl.miskiewicz.coupons.coupon.domain.CouponNotFoundException
+import pl.miskiewicz.coupons.coupon.domain.CouponNotYetActiveException
+import pl.miskiewicz.coupons.coupon.domain.CouponSuspendedException
 import pl.miskiewicz.coupons.coupon.domain.CouponRepository
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import pl.miskiewicz.coupons.coupon.domain.CountryUnresolvedException
@@ -29,7 +31,7 @@ class RedeemCouponServiceSpec extends Specification {
     static final CountryCode PL = new CountryCode('PL')
     static final String CLIENT = '203.0.113.7'
     static final InetAddress CLIENT_ADDRESS = InetAddress.ofLiteral(CLIENT)
-    static final Coupon WIOSNA = Coupon.newCoupon(new CouponCode('WIOSNA'), PL, 10, NOW, null)
+    static final Coupon WIOSNA = Coupon.newCoupon(new CouponCode('WIOSNA'), PL, 10, NOW, null, null)
 
     CouponRepository coupons = Mock()
     RedemptionStore redemptions = Mock()
@@ -143,7 +145,7 @@ class RedeemCouponServiceSpec extends Specification {
 
     def "rejects an exhausted coupon without opening a redemption"() {
         given:
-        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW, null))
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW, null, null, true))
         geo.resolveCountry(_) >> Optional.of(PL)
         redemptions.hasRedeemed(_, _) >> false
 
@@ -157,7 +159,7 @@ class RedeemCouponServiceSpec extends Specification {
 
     def "rejects an expired coupon without opening a redemption, even before it is exhausted"() {
         given:
-        def expiredAtNow = new Coupon(WIOSNA.code(), PL, 10, 0, NOW.minusSeconds(3600), NOW.truncatedTo(java.time.temporal.ChronoUnit.MICROS))
+        def expiredAtNow = new Coupon(WIOSNA.code(), PL, 10, 0, NOW.minusSeconds(3600), null, NOW.truncatedTo(java.time.temporal.ChronoUnit.MICROS), true)
         coupons.findByCode(_) >> Optional.of(expiredAtNow)
         geo.resolveCountry(_) >> Optional.of(PL)
         redemptions.hasRedeemed(_, _) >> false
@@ -172,7 +174,7 @@ class RedeemCouponServiceSpec extends Specification {
 
     def "redeems a coupon whose expiry is still ahead"() {
         given:
-        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 0, NOW.minusSeconds(3600), NOW.plusSeconds(1)))
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 0, NOW.minusSeconds(3600), null, NOW.plusSeconds(1), true))
         geo.resolveCountry(_) >> Optional.of(PL)
         redemptions.hasRedeemed(_, _) >> false
 
@@ -183,9 +185,42 @@ class RedeemCouponServiceSpec extends Specification {
         1 * redemptions.redeem(*_) >> new Redemption(UUID.randomUUID(), WIOSNA.code(), new UserId('user-1'), PL, NOW)
     }
 
+    def "rejects a #reason coupon without opening a redemption"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(coupon)
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> false
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
+
+        then:
+        thrown(expected)
+        0 * redemptions.redeem(*_)
+        meters.get('coupon.redemptions').tag('outcome', outcome).counter().count() == 1
+
+        where:
+        reason           | coupon                                                                                  || expected                    | outcome
+        'suspended'      | new Coupon(WIOSNA.code(), PL, 10, 0, NOW, null, null, false)                            || CouponSuspendedException    | 'suspended'
+        'not yet active' | new Coupon(WIOSNA.code(), PL, 10, 0, NOW.minusSeconds(60), NOW.plusSeconds(60), null, true) || CouponNotYetActiveException | 'not_yet_active'
+    }
+
+    def "tells a returning user that they already used a suspended coupon"() {
+        given:
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 1, NOW, null, null, false))
+        geo.resolveCountry(_) >> Optional.of(PL)
+        redemptions.hasRedeemed(_, _) >> true
+
+        when:
+        service.redeem(new RedeemCouponCommand('WIOSNA', 'user-1', CLIENT))
+
+        then:
+        thrown(CouponAlreadyUsedByUserException)
+    }
+
     def "tells a returning user that they already used an expired coupon"() {
         given:
-        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW.minusSeconds(3600), NOW.minusSeconds(1)))
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW.minusSeconds(3600), null, NOW.minusSeconds(1), true))
         geo.resolveCountry(_) >> Optional.of(PL)
         redemptions.hasRedeemed(_, _) >> true
 
@@ -198,7 +233,7 @@ class RedeemCouponServiceSpec extends Specification {
 
     def "tells a returning user that they already used an exhausted coupon"() {
         given:
-        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW, null))
+        coupons.findByCode(_) >> Optional.of(new Coupon(WIOSNA.code(), PL, 10, 10, NOW, null, null, true))
         geo.resolveCountry(_) >> Optional.of(PL)
         redemptions.hasRedeemed(_, _) >> true
 
