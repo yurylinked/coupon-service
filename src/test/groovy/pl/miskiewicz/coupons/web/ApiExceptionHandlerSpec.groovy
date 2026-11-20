@@ -3,6 +3,7 @@ package pl.miskiewicz.coupons.web
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 
 import java.sql.SQLException
+import java.util.random.RandomGenerator
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.CannotGetJdbcConnectionException
@@ -16,8 +17,12 @@ import spock.lang.Specification
 
 class ApiExceptionHandlerSpec extends Specification {
 
+    RandomGenerator random = Stub {
+        nextInt(_, _) >> 2
+    }
+
     MockMvc mvc = MockMvcBuilders.standaloneSetup(new FailingController())
-            .setControllerAdvice(new ApiExceptionHandler())
+            .setControllerAdvice(new ApiExceptionHandler(new RetryAfter({ random })))
             .build()
 
     def "maps #failure to #status #errorCode"() {
@@ -33,9 +38,9 @@ class ApiExceptionHandlerSpec extends Specification {
 
         where:
         failure            || status | errorCode             | retryAfter
-        'pool-exhausted'   || 503    | 'SERVICE_UNAVAILABLE' | '1'
-        'no-transaction'   || 503    | 'SERVICE_UNAVAILABLE' | '1'
-        'connection-lost'  || 503    | 'SERVICE_UNAVAILABLE' | '1'
+        'pool-exhausted'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'no-transaction'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'connection-lost'  || 503    | 'SERVICE_UNAVAILABLE' | '2'
         'constraint'       || 500    | 'INTERNAL_ERROR'      | null
         'bug'              || 500    | 'INTERNAL_ERROR'      | null
     }

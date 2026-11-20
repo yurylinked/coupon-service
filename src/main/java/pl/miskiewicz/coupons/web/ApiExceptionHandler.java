@@ -36,8 +36,13 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final String ERROR_CODE = "errorCode";
-    private static final String RETRY_AFTER_SECONDS = "1";
     private static final String CONNECTION_EXCEPTION_SQL_STATE_CLASS = "08";
+
+    private final RetryAfter retryAfter;
+
+    ApiExceptionHandler(RetryAfter retryAfter) {
+        this.retryAfter = retryAfter;
+    }
 
     @ExceptionHandler(InvalidCouponCodeException.class)
     ProblemDetail invalidCouponCode(InvalidCouponCodeException ex) {
@@ -168,9 +173,9 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return problemDetail.getProperties() != null && problemDetail.getProperties().containsKey(ERROR_CODE);
     }
 
-    private static ResponseEntity<ProblemDetail> retryLater(ProblemDetail body) {
+    private ResponseEntity<ProblemDetail> retryLater(ProblemDetail body) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
-                .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+                .header(HttpHeaders.RETRY_AFTER, retryAfter.seconds())
                 .body(body);
     }
 
