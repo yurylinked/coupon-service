@@ -55,6 +55,21 @@ class RedemptionApiIT extends IntegrationSpec {
         currentUses('BERLIN') == 0
     }
 
+    def "refuses a response type it cannot produce before the coupon is used"() {
+        given:
+        createCoupon('WIOSNA', 5)
+
+        when:
+        def refused = postJson('/api/v1/redemptions', [code: 'WIOSNA', userId: 'user-1'], ['Accept': 'text/plain'])
+        def usesAfterRefusal = currentUses('WIOSNA')
+        def granted = redeem('WIOSNA', 'user-1')
+
+        then:
+        refused.status() == 406
+        usesAfterRefusal == 0
+        granted.status() == 201
+    }
+
     def "rejects malformed input with one error code per field: #errorCode"() {
         when:
         def response = postRaw('/api/v1/redemptions', body)

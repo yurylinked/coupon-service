@@ -6,6 +6,10 @@ spring:
       enabled: true
   lifecycle:
     timeout-per-shutdown-phase: 15s
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
+      accept-float-as-int: false
   datasource:
     hikari:
       maximum-pool-size: 10

@@ -2,7 +2,7 @@ package pl.miskiewicz.coupons.coupon.domain;
 
 import java.util.Objects;
 
-// What the atomic redemption did. Only Redeemed changed anything; the other outcomes were rolled back.
+// What the atomic redemption did. Only Redeemed changed anything; the other outcomes left the data unchanged.
 public sealed interface RedeemAttempt {
 
     record Redeemed(Redemption redemption) implements RedeemAttempt {

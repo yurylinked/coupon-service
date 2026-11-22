@@ -6,6 +6,7 @@ import java.sql.SQLException
 import java.time.Duration
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.QueryTimeoutException
 import org.springframework.jdbc.CannotGetJdbcConnectionException
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.setup.MockMvcBuilders
@@ -55,14 +56,16 @@ class ApiExceptionHandlerSpec extends Specification {
         !response.contentAsString.contains('secret')
 
         where:
-        failure            || status | errorCode             | retryAfter
-        'pool-exhausted'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
-        'no-transaction'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
-        'connection-lost'  || 503    | 'SERVICE_UNAVAILABLE' | '2'
-        'connect-refused'  || 503    | 'SERVICE_UNAVAILABLE' | '2'
-        'no-sql-state'     || 500    | 'INTERNAL_ERROR'      | null
-        'constraint'       || 500    | 'INTERNAL_ERROR'      | null
-        'bug'              || 500    | 'INTERNAL_ERROR'      | null
+        failure             || status | errorCode             | retryAfter
+        'pool-exhausted'    || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'no-transaction'    || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'connection-lost'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'connect-refused'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'server-shutdown'   || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'statement-timeout' || 503    | 'SERVICE_UNAVAILABLE' | '2'
+        'no-sql-state'      || 500    | 'INTERNAL_ERROR'      | null
+        'constraint'        || 500    | 'INTERNAL_ERROR'      | null
+        'bug'               || 500    | 'INTERNAL_ERROR'      | null
     }
 
     def "maps every domain outcome to one status and error code"() {
@@ -125,6 +128,12 @@ class ApiExceptionHandlerSpec extends Specification {
             }
             if (failure == 'connect-refused') {
                 throw new DataAccessResourceFailureException('secret', new SQLException('secret refused detail', '08001'))
+            }
+            if (failure == 'server-shutdown') {
+                throw new DataAccessResourceFailureException('secret', new SQLException('secret shutdown detail', '57P01'))
+            }
+            if (failure == 'statement-timeout') {
+                throw new QueryTimeoutException('secret', new SQLException('secret timeout detail', '57014'))
             }
             if (failure == 'no-sql-state') {
                 throw new DataAccessResourceFailureException('secret', new SQLException('secret stateless detail'))

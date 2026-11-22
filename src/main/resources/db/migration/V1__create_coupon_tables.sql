@@ -24,10 +24,10 @@ CREATE TABLE redemption (
     user_id VARCHAR(64) NOT NULL,
     country_code CHAR(2) NOT NULL,
     idempotency_key VARCHAR(64),
-    redeemed_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
+    redeemed_at TIMESTAMPTZ NOT NULL,
     cancelled_at TIMESTAMPTZ,
     CONSTRAINT uq_redemption_public_id UNIQUE (public_id),
-    CONSTRAINT ck_redemption_user_id CHECK (char_length(user_id) BETWEEN 1 AND 64),
+    CONSTRAINT ck_redemption_user_id CHECK (user_id ~ '^[A-Za-z0-9._@:+-]{1,64}$'),
     CONSTRAINT ck_redemption_country_format CHECK (country_code ~ '^[A-Z]{2}$'),
     CONSTRAINT ck_redemption_idempotency_key CHECK (idempotency_key IS NULL OR idempotency_key ~ '^[A-Za-z0-9._:-]{1,64}$'),
     CONSTRAINT ck_redemption_cancelled_after_redeemed CHECK (cancelled_at IS NULL OR cancelled_at >= redeemed_at)

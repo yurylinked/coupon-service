@@ -143,6 +143,8 @@ class JdbcRedemptionStore implements RedemptionStore {
     }
 
     // The redemption row is updated only after the coupon lock is held, so a concurrent second cancel sees the first.
+    // A cancelled order is recorded even after the coupon expired; the use goes back so the counter keeps matching
+    // the active rows, and nobody can take it any more. GREATEST keeps the CHECK if the database clock stepped back.
     @Override
     public boolean cancel(RedemptionId redemptionId) {
         return inTransaction(status -> {
@@ -160,12 +162,9 @@ class JdbcRedemptionStore implements RedemptionStore {
             }
             int cancelled = jdbc.sql("""
                             UPDATE redemption r
-                            SET cancelled_at = statement_timestamp()
-                            FROM coupon c
+                            SET cancelled_at = GREATEST(statement_timestamp(), r.redeemed_at)
                             WHERE r.public_id = :redemptionId
                               AND r.cancelled_at IS NULL
-                              AND c.id = r.coupon_id
-                              AND (c.expires_at IS NULL OR c.expires_at > statement_timestamp())
                             """)
                     .param("redemptionId", redemptionId.value())
                     .update();

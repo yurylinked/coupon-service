@@ -92,9 +92,10 @@ class RedemptionCancellationIT extends IntegrationSpec {
         currentUses('BOOK') == 1
     }
 
-    def "does not give back a use of an expired coupon"() {
-        given: 'a second, unexpired coupon, so a cancel that lost its join to the coupon would find a match'
+    def "a cancelled order is recorded even after its coupon expired, and only that coupon gets its use back"() {
+        given: 'another coupon with a use of its own, so a cancel that touched the wrong coupon would show'
         createCoupon('OTHER', 5)
+        redeem('OTHER', 'user-1')
         postJson('/api/v1/coupons', [code: 'BOOK', maxUses: 5, country: 'PL', expiresAt: '2999-07-01T00:00:00Z'])
         String id = redeem('BOOK', 'user-1').body().redemptionId
         expireNow('BOOK')
@@ -103,10 +104,27 @@ class RedemptionCancellationIT extends IntegrationSpec {
         def response = cancel(id)
 
         then:
-        response.status() == 409
-        response.body().errorCode == 'COUPON_EXPIRED'
-        currentUses('BOOK') == 1
-        activeRedemptionRows('BOOK') == 1
+        response.status() == 204
+        get("/api/v1/redemptions/${id}").body().cancelledAt != null
+        currentUses('BOOK') == 0
+        activeRedemptionRows('BOOK') == 0
+        currentUses('OTHER') == 1
+    }
+
+    def "a cancel keeps cancelledAt after redeemedAt when the database clock has stepped back"() {
+        given:
+        createCoupon('BOOK', 5)
+        String id = redeem('BOOK', 'user-1').body().redemptionId
+        jdbcClient.sql("UPDATE redemption SET redeemed_at = statement_timestamp() + interval '2 seconds'").update()
+
+        when:
+        def response = cancel(id)
+        def read = get("/api/v1/redemptions/${id}").body()
+
+        then:
+        response.status() == 204
+        Instant.parse(read.cancelledAt) == Instant.parse(read.redeemedAt)
+        currentUses('BOOK') == 0
     }
 
     def "a use returned to an exhausted coupon goes to the next customer"() {

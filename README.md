@@ -32,6 +32,9 @@ Public edge: create 403, read 403, suspend 403, cancel 403
 PASS: exactly 10 redemptions granted by 2 instances, every other request refused, only redemption is public
 ```
 
+Compose's geo provider is static: every client is treated as `${DEMO_COUNTRY:-PL}`. Export the same `DEMO_COUNTRY`
+for `docker compose` and `prove.sh`.
+
 Tests: `./gradlew test` (unit, seconds) and `./gradlew integrationTest` (Testcontainers, needs Docker).
 `./gradlew check` runs both.
 
@@ -67,13 +70,24 @@ Errors are RFC 9457 `application/problem+json` with a stable `errorCode`:
 |---|---|---|
 | coupon does not exist | 404 | `COUPON_NOT_FOUND` |
 | all uses taken | 409 | `COUPON_EXHAUSTED` |
+| coupon expired, suspended or not valid yet | 409 | `COUPON_EXPIRED`, `COUPON_SUSPENDED`, `COUPON_NOT_YET_VALID` |
 | request from another country | 403 | `COUPON_COUNTRY_NOT_ALLOWED` (`COUNTRY_UNRESOLVED` if the IP has no country) |
 | user already used the coupon | 409 | `COUPON_ALREADY_USED_BY_USER` |
 | code taken on create (any case) | 409 | `COUPON_CODE_ALREADY_EXISTS` |
+| redemption does not exist | 404 | `REDEMPTION_NOT_FOUND` |
+| `Idempotency-Key` of a cancelled redemption | 409 | `REDEMPTION_CANCELLED` |
 | malformed field | 400 | one code per field: `INVALID_COUPON_CODE`, `INVALID_USER_ID`, `INVALID_MAX_USES`, ... |
-| unparsable JSON | 400 | `MALFORMED_REQUEST` |
+| unparsable JSON, wrong JSON type, unknown field | 400 | `MALFORMED_REQUEST` |
 | coupon contended (bulkhead or row lock) | 429 + `Retry-After` 1–3 s | `REDEMPTION_BUSY` |
-| no database connection within 2 s (database down or pool exhausted) | 503 + `Retry-After` 1–3 s | `SERVICE_UNAVAILABLE` |
+| database unavailable (no connection within 2 s, connection lost, server restarting, statement timeout) | 503 + `Retry-After` 1–3 s | `SERVICE_UNAVAILABLE` |
+
+Contracts worth knowing:
+
+- `expiresAt` is exclusive and needs an offset (`2027-06-30T22:00:00Z` is midnight in Warsaw in summer), so DST is
+  the caller's explicit choice.
+- Send one `Idempotency-Key` per payment attempt, such as the order id; a retry of the same attempt reuses it.
+- `userId` is case-sensitive: `User-1` and `user-1` are different customers.
+- Cancelling is always recorded and returns the use, also after the coupon expired.
 
 ## How each requirement is met
 

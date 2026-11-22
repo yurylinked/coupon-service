@@ -50,8 +50,8 @@ public class NaiveRedemptionStore implements RedemptionStore {
                     .param("id", coupon.id())
                     .update();
             Optional<Redemption> inserted = jdbc.sql("""
-                            INSERT INTO redemption (coupon_id, user_id, country_code)
-                            VALUES (:couponId, :userId, :country)
+                            INSERT INTO redemption (coupon_id, user_id, country_code, redeemed_at)
+                            VALUES (:couponId, :userId, :country, statement_timestamp())
                             ON CONFLICT (coupon_id, user_id) WHERE cancelled_at IS NULL DO NOTHING
                             RETURNING public_id, redeemed_at
                             """)

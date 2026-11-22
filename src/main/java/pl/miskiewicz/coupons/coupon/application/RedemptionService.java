@@ -1,9 +1,6 @@
 package pl.miskiewicz.coupons.coupon.application;
 
 import org.springframework.stereotype.Service;
-import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException;
-import pl.miskiewicz.coupons.coupon.domain.CouponRepository;
-import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot;
 import pl.miskiewicz.coupons.coupon.domain.LockNotAcquiredException;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionId;
 import pl.miskiewicz.coupons.coupon.domain.RedemptionNotFoundException;
@@ -14,14 +11,11 @@ import pl.miskiewicz.coupons.coupon.domain.RedemptionStore;
 public class RedemptionService {
 
     private final RedemptionStore redemptions;
-    private final CouponRepository coupons;
     private final RedemptionBulkhead bulkhead;
     private final RedemptionOutcomes outcomes;
 
-    public RedemptionService(
-            RedemptionStore redemptions, CouponRepository coupons, RedemptionBulkhead bulkhead, RedemptionOutcomes outcomes) {
+    public RedemptionService(RedemptionStore redemptions, RedemptionBulkhead bulkhead, RedemptionOutcomes outcomes) {
         this.redemptions = redemptions;
-        this.coupons = coupons;
         this.bulkhead = bulkhead;
         this.outcomes = outcomes;
     }
@@ -59,18 +53,13 @@ public class RedemptionService {
         }
     }
 
-    // Another cancel won, or the coupon expired. Anything else is a bug, not a retryable 429.
+    // The only legitimate reason is a concurrent cancel that won. Anything else is a bug, not a retryable 429.
     private CancellationResult whyNotCancelled(RedemptionRecord record) {
         RedemptionId id = record.redemption().id();
         RedemptionRecord current = redemptions.findById(id)
                 .orElseThrow(() -> new IllegalStateException("Redemption " + id.value() + " disappeared"));
         if (current.cancelled()) {
             return CancellationResult.ALREADY_CANCELLED;
-        }
-        CouponSnapshot coupon = coupons.findByCode(record.redemption().code())
-                .orElseThrow(() -> new IllegalStateException("Coupon of redemption " + id.value() + " disappeared"));
-        if (coupon.isExpired()) {
-            throw new CouponExpiredException();
         }
         throw new IllegalStateException("Cancel of redemption " + id.value() + " changed nothing without a reason");
     }

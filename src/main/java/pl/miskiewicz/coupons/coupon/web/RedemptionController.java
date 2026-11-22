@@ -3,6 +3,7 @@ package pl.miskiewicz.coupons.coupon.web;
 import jakarta.servlet.http.HttpServletRequest;
 import java.net.URI;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +19,10 @@ import pl.miskiewicz.coupons.coupon.application.RedemptionResult;
 import pl.miskiewicz.coupons.coupon.application.RedemptionService;
 
 @RestController
-@RequestMapping("/api/v1/redemptions")
+// produces makes Spring refuse an unacceptable Accept header before the handler runs, not after it has written.
+@RequestMapping(
+        path = "/api/v1/redemptions",
+        produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE})
 class RedemptionController {
 
     private static final String IDEMPOTENCY_KEY = "Idempotency-Key";

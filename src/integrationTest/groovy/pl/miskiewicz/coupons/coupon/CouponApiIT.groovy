@@ -53,10 +53,12 @@ class CouponApiIT extends IntegrationSpec {
         response.body().errorCode == errorCode
 
         where:
-        description                  | body                                        || errorCode
-        'a missing use limit'        | '{"code":"WIOSNA","country":"PL"}'          || 'INVALID_MAX_USES'
-        'a code with invalid format' | '{"code":"ab","maxUses":1,"country":"PL"}'  || 'INVALID_COUPON_CODE'
-        'malformed JSON'             | '{"code":'                                  || 'MALFORMED_REQUEST'
+        description                  | body                                                                              || errorCode
+        'a missing use limit'        | '{"code":"WIOSNA","country":"PL"}'                                                || 'INVALID_MAX_USES'
+        'a code with invalid format' | '{"code":"ab","maxUses":1,"country":"PL"}'                                        || 'INVALID_COUPON_CODE'
+        'malformed JSON'             | '{"code":'                                                                        || 'MALFORMED_REQUEST'
+        'a misspelled field'         | '{"code":"WIOSNA","maxUses":1,"country":"PL","expiresAT":"2999-01-01T00:00:00Z"}' || 'MALFORMED_REQUEST'
+        'a fractional use limit'     | '{"code":"WIOSNA","maxUses":10.5,"country":"PL"}'                                 || 'MALFORMED_REQUEST'
     }
 
     def "reads a coupon regardless of the code case"() {

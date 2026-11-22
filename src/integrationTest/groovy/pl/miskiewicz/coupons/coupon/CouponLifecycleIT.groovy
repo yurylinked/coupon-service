@@ -117,5 +117,6 @@ class CouponLifecycleIT extends IntegrationSpec {
         'a lowercase redemption country'                | 'ck_redemption_country_format'              | "UPDATE redemption SET country_code = 'pl' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
         'an idempotency key with a space'               | 'ck_redemption_idempotency_key'             | "UPDATE redemption SET idempotency_key = 'a b' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
         'an empty user id'                              | 'ck_redemption_user_id'                     | "UPDATE redemption SET user_id = '' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
+        'a user id with a space'                        | 'ck_redemption_user_id'                     | "UPDATE redemption SET user_id = 'user 1' WHERE coupon_id = (SELECT id FROM coupon WHERE code = :code)"
     }
 }

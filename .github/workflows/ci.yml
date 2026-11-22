@@ -41,21 +41,28 @@ jobs:
           path: build/reports/tests
 
   e2e:
-    name: two replicas behind nginx, 200 parallel redemptions
+    name: two replicas behind nginx, 200 redemptions 50 at a time
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: start postgres, two app replicas and nginx
+      - name: build and pull images, retrying registry rate limits
         run: |
           for attempt in 1 2 3; do
-            docker compose up --build --detach --wait --wait-timeout 300 && exit 0
-            echo "compose up failed (attempt $attempt), registry rate limits are the usual cause, retrying"
+            docker compose build --pull && docker compose pull postgres proxy && exit 0
+            echo "build or pull failed (attempt $attempt), retrying"
             sleep $((attempt * 20))
           done
           exit 1
+      - name: start postgres, two app replicas and nginx
+        run: docker compose up --detach --wait --wait-timeout 300
       - run: ./scripts/prove.sh
-      - if: failure()
-        run: docker compose logs
+      - if: failure() || cancelled()
+        run: docker compose logs > compose.log; cat compose.log
+      - if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compose-logs
+          path: compose.log
       - if: always()
         run: docker compose down --volumes

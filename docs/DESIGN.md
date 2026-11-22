@@ -34,10 +34,11 @@ refuses any more, a use came back in the meantime and the client gets `429` to r
 
 ### One clock
 
-Creation time, start of validity, expiry and the redemption and cancellation timestamps all come from PostgreSQL's
-`statement_timestamp()`. The time is read with the coupon and passed to the domain as an `Instant`, so the rules
-stay unit-testable and replicas with skewed clocks agree. `redeemed_at` is the instant at which the granting
-`UPDATE` judged validity, so a redemption never looks later than the expiry it passed.
+The creation, redemption and cancellation timestamps, and the instant every validity rule is judged at, come from
+PostgreSQL's `statement_timestamp()`. The time is read with the coupon and passed to the domain as an `Instant`, so
+the rules stay unit-testable and replicas with skewed clocks agree. `redeemed_at` is the instant at which the granting
+`UPDATE` judged validity, so a redemption never looks later than the expiry it passed. If the database clock steps
+back, `cancelled_at` is held at `redeemed_at` rather than breaking the `CHECK` that orders them.
 
 ### SQL in plain sight
 
@@ -75,20 +76,25 @@ use limit in `Coupon`) and are mirrored by `CHECK` constraints. Each field has i
 invalid value is `400`; a valid but unknown one is `404`. The outcomes form sealed hierarchies, so a new outcome does
 not compile until it has an HTTP status and a metric tag.
 
+JSON is bound strictly: a value of the wrong JSON type (`"maxUses": "ten"` or `10.5`) and an unknown field are
+`MALFORMED_REQUEST`, because the body was not the documented shape; a value of the right type that breaks a rule gets
+the field's own code. An empty string for `validFrom` or `expiresAt` means the field is absent.
+
 ## Beyond the task
 
 These were added because an order system needs them.
 
-- **Cancellation** (`DELETE /redemptions/{id}`) returns the use unless the coupon has expired, keeps the row with
-  `cancelled_at`, and lets the user redeem again. It is idempotent, so the order system can retry. It locks the
-  coupon row first, in the same order as a redemption, so the two queue instead of deadlocking.
+- **Cancellation** (`DELETE /redemptions/{id}`) records `cancelled_at`, returns the use and lets the user redeem
+  again. A cancelled order is recorded even after the coupon expired: the use goes back so `current_uses` keeps
+  equalling the active rows, and an expired coupon refuses everyone anyway. It is idempotent, so the order system can
+  retry. It locks the coupon row first, in the same order as a redemption, so the two queue instead of deadlocking.
 - **Idempotency-Key**: a client that times out and retries gets the original redemption (`201`,
   `Idempotent-Replayed: true`) instead of `COUPON_ALREADY_USED_BY_USER`. The key is scoped to a coupon and a user, so
   one order id can carry several coupons. A unique index on `(coupon_id, user_id, idempotency_key)` covers cancelled
   rows too, so a stale retry after a cancellation is refused with `REDEMPTION_CANCELLED`. This differs from the IETF
   Idempotency-Key draft on purpose: there is no "same key, different payload" `422` because the key is bound to the
-  request's identity, parallel twins both get the one redemption instead of a `409`, and keys do not expire because
-  the redemptions they point to do not.
+  request's identity, parallel twins get the one redemption or a retryable `429` instead of a `409`, and keys do not
+  expire because the redemptions they point to do not.
 - **Start of validity and suspension** (`validFrom`, `PATCH {"active": false}`) cover campaigns that start at a set
   time and codes that leak to deal sites. Both are enforced in the same atomic `UPDATE`.
 
@@ -98,10 +104,13 @@ These were added because an order system needs them.
   expose it.
 - Metrics `coupon.redemptions{outcome}` and `coupon.cancellations{outcome}` are never tagged by coupon code. Logs are
   structured ECS.
-- `503` with `Retry-After` means no database connection within the Hikari timeout: the database is down or the pool
-  is exhausted. Other database failures are `500` and logged.
-- nginx answers its own errors as problem+json: `403` for anything but redemption on the public edge, `413`, and
-  `502`–`504` as `503` with a fixed `Retry-After: 2`.
+- `503` with `Retry-After` means the database could not serve the request right now: no connection within the
+  Hikari timeout, a lost connection, a server shutting down or restarting, or a statement past `statement_timeout`.
+  Other database failures are `500` and logged.
+- nginx answers its own errors as problem+json: `400` for a request it cannot read, `403` for anything but redemption
+  on the public edge, `404` and `405` on the internal edge, `413`, and `502`–`504` as `503` with a fixed
+  `Retry-After: 2`. It re-resolves the replicas through Docker's DNS, so a recreated container gets traffic without a
+  reload.
 - `X-Served-By` on the public edge shows which replica answered, so `prove.sh` can check both did. It is demo
   instrumentation.
 - Shutdown is graceful within compose's stop grace period. The image runs as a non-root user.
@@ -119,9 +128,10 @@ These were added because an order system needs them.
 
 - The schema is a single migration because nothing has been deployed. On a live table each change would be
   expand/contract, with `CREATE INDEX CONCURRENTLY` in its own non-transactional migration.
-- Compose uses a static geo provider, because behind Docker NAT every client has a private address. The DB-IP path is
-  covered by `ClientIpIT` and `DbIpGeoLocationResolverSpec`. The database is committed so builds do not depend on
-  db-ip.com; `scripts/download-geo-db.sh` refreshes it.
+- Compose uses a static geo provider, because behind Docker NAT every client has a private address. `ClientIpIT`
+  covers extracting the client address; `DbIpGeoLocationResolverSpec` and `GeoConfigurationSpec` cover the DB-IP
+  lookup. The database is committed so builds do not depend on db-ip.com; `scripts/download-geo-db.sh` refreshes it
+  and records its month in `geo/dbip-country-lite.month`.
 - The SQL is PostgreSQL-specific (`ON CONFLICT … WHERE`, partial indexes, `uuidv7()`). The approach, one conditional
   statement as the arbiter, carries over to other databases.
 - With more time: an outbox to Kafka for redemptions, the user id from a token, OpenAPI, tracing, and killing a

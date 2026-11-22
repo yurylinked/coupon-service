@@ -1,6 +1,7 @@
 package pl.miskiewicz.coupons.coupon.web;
 
 import java.net.URI;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -13,7 +14,9 @@ import pl.miskiewicz.coupons.coupon.application.CouponService;
 import pl.miskiewicz.coupons.coupon.domain.Coupon;
 
 @RestController
-@RequestMapping("/api/v1/coupons")
+@RequestMapping(
+        path = "/api/v1/coupons",
+        produces = {MediaType.APPLICATION_JSON_VALUE, MediaType.APPLICATION_PROBLEM_JSON_VALUE})
 class CouponController {
 
     private final CouponService couponService;

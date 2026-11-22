@@ -10,6 +10,10 @@ export CODE="PROVE-$(date +%s)"
 results="$(mktemp)"
 trap 'rm -f "$results"' EXIT
 
+# %header{} in --write-out needs curl 7.84 or newer.
+printf '%s\n' 7.84.0 "$(curl --version | awk 'NR == 1 { print $2 }')" | sort -V -C \
+  || { echo "prove.sh needs curl 7.84 or newer" >&2; exit 2; }
+
 redeem() {
   local user="$1" attempt status served retry_after
   for attempt in 1 2 3 4 5; do
@@ -44,7 +48,7 @@ echo "Firing ${requests} redemptions through the public edge, ${parallelism} at 
 echo "A 429 or 503 is retried after its Retry-After, as a well-behaved client would"
 seq 1 "$requests" | xargs -P "$parallelism" -I{} bash -c 'redeem {}' >> "$results"
 
-current_uses="$(curl -s --max-time 30 "${admin_url}/api/v1/coupons/${CODE}" | grep -o '"currentUses":[0-9]*' | cut -d: -f2)"
+current_uses="$(curl -s --max-time 30 "${admin_url}/api/v1/coupons/${CODE}" | grep -o '"currentUses":[0-9]*' | cut -d: -f2 || true)"
 created="$(grep -c '^201 ' "$results" || true)"
 rejected="$(grep -c '^409 ' "$results" || true)"
 server_errors="$(grep -c '^5' "$results" || true)"

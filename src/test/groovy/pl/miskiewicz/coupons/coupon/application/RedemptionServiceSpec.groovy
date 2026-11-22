@@ -3,11 +3,7 @@ package pl.miskiewicz.coupons.coupon.application
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry
 import java.time.Duration
 import java.time.Instant
-import pl.miskiewicz.coupons.coupon.domain.Coupon
 import pl.miskiewicz.coupons.coupon.domain.CouponCode
-import pl.miskiewicz.coupons.coupon.domain.CouponExpiredException
-import pl.miskiewicz.coupons.coupon.domain.CouponRepository
-import pl.miskiewicz.coupons.coupon.domain.CouponSnapshot
 import pl.miskiewicz.coupons.coupon.domain.CountryCode
 import pl.miskiewicz.coupons.coupon.domain.InvalidRedemptionIdException
 import pl.miskiewicz.coupons.coupon.domain.LockNotAcquiredException
@@ -30,11 +26,9 @@ class RedemptionServiceSpec extends Specification {
     static final RedemptionRecord CANCELLED = new RedemptionRecord(REDEMPTION, NOW)
 
     RedemptionStore redemptions = Mock()
-    CouponRepository coupons = Mock()
     SimpleMeterRegistry meters = new SimpleMeterRegistry()
     RedemptionBulkhead bulkhead = new RedemptionBulkhead(new BulkheadProperties(1, 1, Duration.ZERO))
-    RedemptionService service = new RedemptionService(
-            redemptions, coupons, bulkhead, new RedemptionOutcomes(meters))
+    RedemptionService service = new RedemptionService(redemptions, bulkhead, new RedemptionOutcomes(meters))
 
     def "finds a redemption by its id in any letter case"() {
         given:
@@ -101,23 +95,17 @@ class RedemptionServiceSpec extends Specification {
         cancellations('already_cancelled') == 1
     }
 
-    def "when the atomic cancel changes nothing and #reason, refuses with #expected.simpleName"() {
+    def "when the atomic cancel changes nothing and nothing explains it, fails loudly instead of answering 429"() {
         given:
         redemptions.findById(RID) >>> [Optional.of(ACTIVE), Optional.of(ACTIVE)]
         redemptions.cancel(RID) >> false
-        coupons.findByCode(BOOK) >> Optional.of(new CouponSnapshot(coupon, NOW))
 
         when:
         service.cancel(ID.toString())
 
         then:
-        thrown(expected)
-        cancellations(outcome) == 1
-
-        where:
-        reason                      | coupon       || expected               | outcome
-        'the coupon has expired'    | coupon(NOW)  || CouponExpiredException | 'expired'
-        'nothing explains it (bug)' | coupon(null) || IllegalStateException  | 'error'
+        thrown(IllegalStateException)
+        cancellations('error') == 1
     }
 
     def "a cancel waits its turn in the same bulkhead as redemptions of the coupon"() {
@@ -152,9 +140,5 @@ class RedemptionServiceSpec extends Specification {
 
     private double cancellations(String outcome) {
         meters.get('coupon.cancellations').tag('outcome', outcome).counter().count()
-    }
-
-    private static Coupon coupon(Instant expiresAt) {
-        new Coupon(BOOK, new CountryCode('PL'), 5, 1, NOW.minusSeconds(3600), null, expiresAt, true)
     }
 }

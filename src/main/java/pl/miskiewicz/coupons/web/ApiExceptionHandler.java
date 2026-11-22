@@ -1,6 +1,7 @@
 package pl.miskiewicz.coupons.web;
 
 import java.sql.SQLException;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -44,6 +45,8 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Logger LOG = LoggerFactory.getLogger(ApiExceptionHandler.class);
     private static final String ERROR_CODE = "errorCode";
     private static final String CONNECTION_EXCEPTION_SQL_STATE_CLASS = "08";
+    // The server is shutting down or restarting (57P01-57P03), or the statement ran past statement_timeout (57014).
+    private static final Set<String> TRANSIENT_SQL_STATES = Set.of("57P01", "57P02", "57P03", "57014");
 
     private final RetryAfter retryAfter;
 
@@ -72,7 +75,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(DataAccessException.class)
     ResponseEntity<ProblemDetail> dataAccessFailure(DataAccessException ex) {
-        if (ex instanceof CannotGetJdbcConnectionException || isConnectionFailure(ex)) {
+        if (ex instanceof CannotGetJdbcConnectionException || isTransientDatabaseFailure(ex)) {
             LOG.warn("Database connection unavailable", ex);
             return retryLater(HttpStatus.SERVICE_UNAVAILABLE, databaseUnavailable());
         }
@@ -86,7 +89,7 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.internalServerError().body(internalError());
     }
 
-    // Framework errors (404, 405, 415) build their body late, so their errorCode is added here.
+    // Framework errors (400, 404, 405, 406, 415, ...) build their body late, so their errorCode is added here.
     @Override
     protected ResponseEntity<Object> createResponseEntity(
             Object body, HttpHeaders headers, HttpStatusCode statusCode, WebRequest request) {
@@ -110,10 +113,11 @@ class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         };
     }
 
-    private static boolean isConnectionFailure(DataAccessException ex) {
+    private static boolean isTransientDatabaseFailure(DataAccessException ex) {
         return ex.getMostSpecificCause() instanceof SQLException sqlException
                 && sqlException.getSQLState() != null
-                && sqlException.getSQLState().startsWith(CONNECTION_EXCEPTION_SQL_STATE_CLASS);
+                && (sqlException.getSQLState().startsWith(CONNECTION_EXCEPTION_SQL_STATE_CLASS)
+                        || TRANSIENT_SQL_STATES.contains(sqlException.getSQLState()));
     }
 
     private static boolean hasErrorCode(ProblemDetail problemDetail) {
