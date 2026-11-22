@@ -59,6 +59,8 @@ class CouponApiIT extends IntegrationSpec {
         'malformed JSON'             | '{"code":'                                                                        || 'MALFORMED_REQUEST'
         'a misspelled field'         | '{"code":"WIOSNA","maxUses":1,"country":"PL","expiresAT":"2999-01-01T00:00:00Z"}' || 'MALFORMED_REQUEST'
         'a fractional use limit'     | '{"code":"WIOSNA","maxUses":10.5,"country":"PL"}'                                 || 'MALFORMED_REQUEST'
+        'an empty expiry'            | '{"code":"WIOSNA","maxUses":1,"country":"PL","expiresAt":""}'                     || 'MALFORMED_REQUEST'
+        'an empty start of validity' | '{"code":"WIOSNA","maxUses":1,"country":"PL","validFrom":""}'                     || 'MALFORMED_REQUEST'
     }
 
     def "reads a coupon regardless of the code case"() {

@@ -78,7 +78,8 @@ not compile until it has an HTTP status and a metric tag.
 
 JSON is bound strictly: a value of the wrong JSON type (`"maxUses": "ten"` or `10.5`) and an unknown field are
 `MALFORMED_REQUEST`, because the body was not the documented shape; a value of the right type that breaks a rule gets
-the field's own code. An empty string for `validFrom` or `expiresAt` means the field is absent.
+the field's own code. An empty string for `validFrom` or `expiresAt` is `MALFORMED_REQUEST` too: a coupon must
+not lose its expiry because a form sent a blank field; leave the field out for no expiry.
 
 ## Beyond the task
 
