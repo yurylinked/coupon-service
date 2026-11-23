@@ -77,14 +77,15 @@ Errors are RFC 9457 `application/problem+json` with a stable `errorCode`:
 | redemption does not exist | 404 | `REDEMPTION_NOT_FOUND` |
 | `Idempotency-Key` of a cancelled redemption | 409 | `REDEMPTION_CANCELLED` |
 | malformed field | 400 | one code per field: `INVALID_COUPON_CODE`, `INVALID_USER_ID`, `INVALID_MAX_USES`, ... |
-| unparsable JSON, wrong JSON type, unknown field | 400 | `MALFORMED_REQUEST` |
+| unparsable JSON, wrong JSON type, unknown field, blank date | 400 | `MALFORMED_REQUEST` |
+| `Accept` the service cannot produce | 406, before anything is changed | — |
 | coupon contended (bulkhead or row lock) | 429 + `Retry-After` 1–3 s | `REDEMPTION_BUSY` |
 | database unavailable (no connection within 2 s, connection lost, server restarting, statement timeout) | 503 + `Retry-After` 1–3 s | `SERVICE_UNAVAILABLE` |
 
 Contracts worth knowing:
 
 - `expiresAt` is exclusive and needs an offset (`2027-06-30T22:00:00Z` is midnight in Warsaw in summer), so DST is
-  the caller's explicit choice.
+  the caller's explicit choice. Leave it out for a coupon without expiry; an empty string is rejected.
 - Send one `Idempotency-Key` per payment attempt, such as the order id; a retry of the same attempt reuses it.
 - `userId` is case-sensitive: `User-1` and `user-1` are different customers.
 - Cancelling is always recorded and returns the use, also after the coupon expired.
@@ -101,9 +102,10 @@ Contracts worth knowing:
 
 ## How I used AI
 
-Claude Code wrote most of the code and tests with me, and separate agents reviewed it without seeing earlier
-conclusions. I checked every finding against the code and reproduced every bug with a failing test first. Some of the
-calls I made along the way:
+I worked with Claude Code as a pair programmer. I owned the requirements and the decisions: I reviewed every change,
+asked why, chose between the options and steered what to fix and what to test next. Independent review agents read
+the code without seeing earlier conclusions; I checked each finding against the code, dropped the ones that did not
+hold and had every real bug reproduced by a failing test before it was fixed. Some of the calls I made:
 
 - The first version took time from a JVM `Clock`. I moved every comparison to PostgreSQL's `statement_timestamp()`,
   because two replicas with skewed clocks could disagree about whether a coupon had expired.
